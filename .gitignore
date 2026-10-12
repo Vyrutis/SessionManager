@@ -1,0 +1,9 @@
+bin/
+obj/
+artifacts/
+*_wpftmp.csproj
+*.user
+.vs/
+.vscode/
+*.suo
+TestResults/

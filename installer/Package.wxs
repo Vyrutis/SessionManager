@@ -1,0 +1,41 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Session Manager"
+           Manufacturer="Session Manager"
+           Version="$(var.ProductVersion)"
+           UpgradeCode="2FB4CD21-64B8-45C4-89A8-C84481601FDC"
+           Scope="perMachine"
+           Compressed="yes">
+
+    <!-- Installing a newer version replaces the old one; sessions and passwords (in %APPDATA% / Credential Manager) are kept. -->
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Session Manager is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Icon Id="AppIcon" SourceFile="$(var.IconPath)" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+    <Property Id="ARPURLINFOABOUT" Value="Session Manager - SSH and Remote Desktop sessions" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Session Manager" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+    <StandardDirectory Id="DesktopFolder" />
+
+    <Feature Id="Main" Title="Session Manager" AllowAbsent="no">
+      <!-- Everything dotnet publish produced (self-contained, so no .NET install is needed). -->
+      <Files Directory="INSTALLFOLDER" Include="$(var.PublishDir)**" />
+
+      <Component Id="StartMenuShortcut" Directory="ProgramMenuFolder" Guid="5F0C3B7E-8B57-4C83-9C21-6E2B1D0A4E11">
+        <Shortcut Id="StartMenuShortcut" Name="Session Manager" Description="SSH and Remote Desktop sessions"
+                  Target="[INSTALLFOLDER]SessionManager.exe" WorkingDirectory="INSTALLFOLDER" Icon="AppIcon" />
+        <RegistryValue Root="HKCU" Key="Software\SessionManager\Installer" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+
+      <Component Id="DesktopShortcut" Directory="DesktopFolder" Guid="9A4D2E61-1C7F-4B0E-A3D5-7E8F90B1C2D3">
+        <Shortcut Id="DesktopShortcut" Name="Session Manager" Description="SSH and Remote Desktop sessions"
+                  Target="[INSTALLFOLDER]SessionManager.exe" WorkingDirectory="INSTALLFOLDER" Icon="AppIcon" />
+        <RegistryValue Root="HKCU" Key="Software\SessionManager\Installer" Name="DesktopShortcut" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </Feature>
+  </Package>
+</Wix>

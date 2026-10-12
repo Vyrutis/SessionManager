@@ -1,0 +1,199 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="xterm.css">
+<style>
+  html, body { margin: 0; height: 100%; background: #0c0c0c; overflow: hidden; font-family: 'Segoe UI', sans-serif; }
+  #term { position: absolute; inset: 4px 0 0 6px; }
+  :root { --sb-thumb: rgba(255,255,255,.16); --sb-thumb-hover: rgba(255,255,255,.3); --ui-bg: #1b2236; --ui-fg: #d8e0f0; --ui-border: #33415f; }
+  .xterm .xterm-viewport { background-color: transparent !important; }
+  .xterm-viewport::-webkit-scrollbar { width: 10px; }
+  .xterm-viewport::-webkit-scrollbar-track { background: transparent; }
+  .xterm-viewport::-webkit-scrollbar-thumb { background: var(--sb-thumb); border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
+  .xterm-viewport::-webkit-scrollbar-thumb:hover { background: var(--sb-thumb-hover); background-clip: padding-box; }
+
+  /* Find box (Ctrl+Shift+F) */
+  #find { position: absolute; top: 8px; right: 18px; z-index: 10; display: flex; align-items: center; gap: 4px;
+          background: var(--ui-bg); color: var(--ui-fg); border: 1px solid var(--ui-border); border-radius: 6px;
+          padding: 4px 4px 4px 8px; box-shadow: 0 4px 14px rgba(0,0,0,.35); font-size: 12px; }
+  #find[hidden] { display: none; }
+  #find input { width: 190px; background: transparent; color: inherit; border: none; outline: none; font: inherit; font-size: 13px; }
+  #find button { background: transparent; color: inherit; border: 1px solid transparent; border-radius: 4px; width: 24px; height: 22px;
+                 cursor: pointer; font: inherit; font-size: 13px; line-height: 1; padding: 0; }
+  #find button:hover { border-color: var(--ui-border); }
+  #find button.on { background: var(--ui-border); }
+  #count { opacity: .7; min-width: 54px; text-align: right; margin-right: 2px; }
+
+  /* Multi-exec: input typed here goes to every included tab */
+  body.broadcast::after { content: ''; position: fixed; inset: 0; border: 2px solid #e3a008; pointer-events: none; z-index: 5; }
+  #bcast { position: fixed; bottom: 6px; right: 18px; z-index: 6; background: #e3a008; color: #1a1300; font-size: 11px; font-weight: 600;
+           letter-spacing: .04em; padding: 2px 8px; border-radius: 4px; pointer-events: none; }
+  #bcast[hidden] { display: none; }
+</style>
+</head>
+<body>
+<div id="term"></div>
+<div id="find" hidden>
+  <input id="q" placeholder="Find" spellcheck="false">
+  <span id="count"></span>
+  <button id="case" title="Match case">Aa</button>
+  <button id="prev" title="Previous (Shift+Enter)">&#x2191;</button>
+  <button id="next" title="Next (Enter)">&#x2193;</button>
+  <button id="close" title="Close (Esc)">&#x2715;</button>
+</div>
+<div id="bcast" hidden>MULTI-EXEC</div>
+<script src="xterm.js"></script>
+<script src="addon-fit.js"></script>
+<script src="addon-search.js"></script>
+<script src="addon-web-links.js"></script>
+<script>
+  const params = new URLSearchParams(location.search);
+
+  // Color schemes. "Auto" uses the app theme's background (passed as bg) with the Campbell palette.
+  const campbell = ['#0c0c0c','#c50f1f','#13a10e','#c19c00','#0037da','#881798','#3a96dd','#cccccc',
+                    '#767676','#e74856','#16c60c','#f9f1a5','#3b78ff','#b4009e','#61d6d6','#f2f2f2'];
+  const SCHEMES = {
+    'Campbell':        { bg: '#0c0c0c', fg: '#cccccc', sel: '#3a5a9a', ansi: campbell },
+    'One Dark':        { bg: '#282c34', fg: '#abb2bf', sel: '#3e4451', ansi: ['#282c34','#e06c75','#98c379','#e5c07b','#61afef','#c678dd','#56b6c2','#abb2bf',
+                                                                          '#5c6370','#e06c75','#98c379','#e5c07b','#61afef','#c678dd','#56b6c2','#ffffff'] },
+    'Dracula':         { bg: '#282a36', fg: '#f8f8f2', sel: '#44475a', ansi: ['#21222c','#ff5555','#50fa7b','#f1fa8c','#bd93f9','#ff79c6','#8be9fd','#f8f8f2',
+                                                                          '#6272a4','#ff6e6e','#69ff94','#ffffa5','#d6acff','#ff92df','#a4ffff','#ffffff'] },
+    'Solarized Dark':  { bg: '#002b36', fg: '#839496', sel: '#073642', ansi: ['#073642','#dc322f','#859900','#b58900','#268bd2','#d33682','#2aa198','#eee8d5',
+                                                                          '#586e75','#cb4b16','#586e75','#657b83','#839496','#6c71c4','#93a1a1','#fdf6e3'] },
+    'Solarized Light': { bg: '#fdf6e3', fg: '#657b83', sel: '#eee8d5', cursor: '#586e75',
+                         ansi: ['#073642','#dc322f','#859900','#b58900','#268bd2','#d33682','#2aa198','#eee8d5',
+                                '#586e75','#cb4b16','#586e75','#657b83','#839496','#6c71c4','#93a1a1','#fdf6e3'] },
+    'Gruvbox Dark':    { bg: '#282828', fg: '#ebdbb2', sel: '#504945', ansi: ['#282828','#cc241d','#98971a','#d79921','#458588','#b16286','#689d6a','#a89984',
+                                                                          '#928374','#fb4934','#b8bb26','#fabd2f','#83a598','#d3869b','#8ec07c','#ebdbb2'] },
+    'Nord':            { bg: '#2e3440', fg: '#d8dee9', sel: '#434c5e', ansi: ['#3b4252','#bf616a','#a3be8c','#ebcb8b','#81a1c1','#b48ead','#88c0d0','#e5e9f0',
+                                                                          '#4c566a','#bf616a','#a3be8c','#ebcb8b','#81a1c1','#b48ead','#8fbcbb','#eceff4'] },
+  };
+  const ANSI_NAMES = ['black','red','green','yellow','blue','magenta','cyan','white',
+                      'brightBlack','brightRed','brightGreen','brightYellow','brightBlue','brightMagenta','brightCyan','brightWhite'];
+
+  let schemeName = params.get('scheme') || 'Auto';
+  let autoBg = params.get('bg') || '#0c0c0c';
+
+  function isLight(hex) {
+    const n = parseInt(hex.slice(1), 16);
+    return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) > 150;
+  }
+
+  function buildTheme() {
+    const s = SCHEMES[schemeName] || { ...SCHEMES['Campbell'], bg: autoBg, fg: '#d4d4d4' };
+    const light = isLight(s.bg);
+    const root = document.documentElement.style;
+    document.body.style.background = s.bg;
+    root.setProperty('--sb-thumb', light ? 'rgba(0,0,0,.2)' : 'rgba(255,255,255,.16)');
+    root.setProperty('--sb-thumb-hover', light ? 'rgba(0,0,0,.35)' : 'rgba(255,255,255,.3)');
+    root.setProperty('--ui-bg', light ? '#f4f1e6' : '#1b2236');
+    root.setProperty('--ui-fg', light ? '#3b4148' : '#d8e0f0');
+    root.setProperty('--ui-border', light ? '#c9c2ad' : '#33415f');
+    const t = { background: s.bg, foreground: s.fg, cursor: s.cursor || s.fg, cursorAccent: s.bg, selectionBackground: s.sel };
+    s.ansi.forEach((c, i) => t[ANSI_NAMES[i]] = c);
+    return t;
+  }
+
+  const font = params.get('font');
+  const term = new Terminal({
+    fontFamily: (font ? `'${font}', ` : '') + "'Cascadia Mono', 'Cascadia Code', Consolas, 'Courier New', monospace",
+    fontSize: parseInt(params.get('fs') || '14', 10),
+    cursorBlink: true,
+    scrollback: 10000,
+    allowProposedApi: true,
+    theme: buildTheme(),
+  });
+  const fit = new FitAddon.FitAddon();
+  const search = new SearchAddon.SearchAddon();
+  term.loadAddon(fit);
+  term.loadAddon(search);
+  term.open(document.getElementById('term'));
+
+  const post = m => window.chrome.webview.postMessage(m);
+
+  // Links open on Ctrl+click so a plain click can still select text.
+  term.loadAddon(new WebLinksAddon.WebLinksAddon((e, uri) => { if (e.ctrlKey) post({ type: 'link', uri }); }));
+
+  let lastCols = 0, lastRows = 0;
+  function doFit() {
+    try { fit.fit(); } catch (e) { }
+    if (term.cols !== lastCols || term.rows !== lastRows) {
+      lastCols = term.cols; lastRows = term.rows;
+      post({ type: 'resize', cols: term.cols, rows: term.rows });
+    }
+  }
+  new ResizeObserver(() => doFit()).observe(document.getElementById('term'));
+
+  term.onData(d => post({ type: 'input', data: d }));
+
+  // ───── Find ─────
+  const findBox = document.getElementById('find'), q = document.getElementById('q'), count = document.getElementById('count');
+  const caseBtn = document.getElementById('case');
+  let matchCase = false;
+  const decorations = { matchBackground: '#6b5a1e', matchBorder: '#00000000', matchOverviewRuler: '#a08a3a',
+                        activeMatchBackground: '#e3a008', activeMatchBorder: '#ffffff', activeMatchColorOverviewRuler: '#e3a008' };
+  const opts = incremental => ({ caseSensitive: matchCase, incremental, decorations });
+  search.onDidChangeResults(r => {
+    if (!q.value) count.textContent = '';
+    else if (r.resultCount === 0) count.textContent = 'No results';
+    else count.textContent = (r.resultIndex >= 0 ? r.resultIndex + 1 : '?') + ' of ' + r.resultCount + (r.resultCount >= 1000 ? '+' : '');
+  });
+  function openFind() {
+    findBox.hidden = false;
+    const sel = term.getSelection();
+    if (sel && !sel.includes('\n')) q.value = sel;
+    q.focus(); q.select();
+    if (q.value) search.findNext(q.value, opts(true));
+  }
+  function closeFind() {
+    findBox.hidden = true;
+    search.clearDecorations();
+    term.focus();
+  }
+  q.addEventListener('input', () => { if (q.value) search.findNext(q.value, opts(true)); else { search.clearDecorations(); count.textContent = ''; } });
+  q.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); e.shiftKey ? search.findPrevious(q.value, opts(false)) : search.findNext(q.value, opts(false)); }
+    else if (e.key === 'Escape') { e.preventDefault(); closeFind(); }
+  });
+  document.getElementById('next').onclick = () => search.findNext(q.value, opts(false));
+  document.getElementById('prev').onclick = () => search.findPrevious(q.value, opts(false));
+  document.getElementById('close').onclick = closeFind;
+  caseBtn.onclick = () => { matchCase = !matchCase; caseBtn.classList.toggle('on', matchCase); if (q.value) search.findNext(q.value, opts(true)); q.focus(); };
+
+  // Ctrl+Shift+C / Ctrl+Shift+V copy and paste; plain Ctrl+C still sends ^C to the server. Ctrl+Shift+F finds.
+  term.attachCustomKeyEventHandler(e => {
+    if (e.type !== 'keydown') return true;
+    if (e.ctrlKey && e.shiftKey && e.code === 'KeyC') {
+      if (term.hasSelection()) post({ type: 'copy', text: term.getSelection() });
+      return false;
+    }
+    if (e.ctrlKey && e.shiftKey && e.code === 'KeyV') { post({ type: 'paste' }); return false; }
+    if (e.ctrlKey && e.shiftKey && e.code === 'KeyF') { openFind(); return false; }
+    return true;
+  });
+
+  // Right-click: copy if something is selected, otherwise paste (like PuTTY).
+  document.getElementById('term').addEventListener('contextmenu', e => {
+    e.preventDefault();
+    if (term.hasSelection()) { post({ type: 'copy', text: term.getSelection() }); term.clearSelection(); }
+    else post({ type: 'paste' });
+  });
+  findBox.addEventListener('contextmenu', e => e.stopPropagation());
+
+  window.chrome.webview.addEventListener('message', e => {
+    const m = e.data;
+    if (m.type === 'output') term.write(m.data);
+    else if (m.type === 'paste') term.paste(m.text);
+    else if (m.type === 'focus') { if (findBox.hidden) term.focus(); else q.focus(); }
+    else if (m.type === 'theme') { autoBg = m.bg; if (m.scheme) schemeName = m.scheme; term.options.theme = buildTheme(); }
+    else if (m.type === 'find') openFind();
+    else if (m.type === 'broadcast') { document.body.classList.toggle('broadcast', m.on); document.getElementById('bcast').hidden = !m.on; }
+  });
+
+  doFit();
+  post({ type: 'ready', cols: term.cols, rows: term.rows });
+  term.focus();
+</script>
+</body>
+</html>
