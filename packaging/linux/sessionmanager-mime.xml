@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-sessionmanager-list">
+    <sub-class-of type="application/json"/>
+    <comment>Session Manager session list</comment>
+    <glob pattern="*.smlist"/>
+    <icon name="sessionmanager"/>
+  </mime-type>
+  <mime-type type="application/x-sessionmanager-session">
+    <sub-class-of type="application/json"/>
+    <comment>Session Manager session</comment>
+    <glob pattern="*.smsession"/>
+    <icon name="sessionmanager"/>
+  </mime-type>
+</mime-info>

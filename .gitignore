@@ -7,3 +7,7 @@ artifacts/
 .vscode/
 *.suo
 TestResults/
+packaging/arch*/src/
+packaging/arch*/pkg/
+packaging/arch*/*.pkg.tar.*
+packaging/arch-bin/*.tar.gz

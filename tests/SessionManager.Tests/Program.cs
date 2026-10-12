@@ -157,7 +157,7 @@ SessionList.Write(part, SessionList.Build(new[] { web }, Array.Empty<CredentialP
 var other = NewStore();
 var res3 = SessionList.Merge(other, SessionList.Read(part));
 var oWeb = other.FindById(web.Id);
-Check("missing jump host/profile links are cleared", res3.Added == 1 && oWeb?.Settings?.JumpHostId == null && oWeb.Settings.CredentialId == null);
+Check("missing jump host/profile links are cleared", res3.Added == 1 && oWeb?.Settings?.JumpHostId == null && oWeb!.Settings!.CredentialId == null);
 
 // Corrupt / hostile list
 File.WriteAllText(part, """{"Format":"SessionManager.List","Items":[null,{"Kind":"Session","Name":null,"Protocol":"Ssh","Settings":null,"Children":[{"Kind":"Session","Name":"x"}]}],"Credentials":null}""");

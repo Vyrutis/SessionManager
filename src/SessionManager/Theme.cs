@@ -22,8 +22,8 @@ public static class Theme
 
     public static event Action? Changed;
 
-    public const double MinScale = 0.8, MaxScale = 1.5;
-    public const double MinVisibility = 0.1, MaxVisibility = 0.85;
+    public const double MinScale = UiSettings.MinScale, MaxScale = UiSettings.MaxScale;
+    public const double MinVisibility = UiSettings.MinVisibility, MaxVisibility = UiSettings.MaxVisibility;
 
     private static readonly Dictionary<string, (string Light, string Dark)> Palette = new()
     {
@@ -149,19 +149,7 @@ public static class Theme
     }
 
     /// <summary>Fills missing values and keeps everything in range (settings files can be edited by hand).</summary>
-    public static UiSettings Normalize(UiSettings? ui)
-    {
-        ui ??= new UiSettings();
-        if (ParseOrNull(ui.Accent) == null) ui.Accent = null;
-        if (ParseOrNull(ui.Main) == null) ui.Main = null;
-        if (string.IsNullOrWhiteSpace(ui.BackgroundImage)) ui.BackgroundImage = null;
-        ui.BackgroundVisibility = Clamp(ui.BackgroundVisibility, MinVisibility, MaxVisibility, 0.35);
-        ui.Scale = Clamp(ui.Scale, MinScale, MaxScale, 1.0);
-        return ui;
-    }
-
-    private static double Clamp(double v, double min, double max, double fallback) =>
-        double.IsFinite(v) ? Math.Clamp(v, min, max) : fallback;
+    public static UiSettings Normalize(UiSettings? ui) => UiSettings.Normalize(ui);
 
     /// <summary>Themes a dialog: background, text color, interface size and (in dark mode) a dark system title bar.</summary>
     public static void ApplyTo(Window w, bool scaleContent = true)

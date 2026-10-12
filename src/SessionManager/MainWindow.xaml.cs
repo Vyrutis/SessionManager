@@ -978,7 +978,7 @@ public partial class MainWindow : Window
     }
 
     private void ScanPath(string path) =>
-        _ = ScanAsync(() => ScreenshotScan.ScanFileAsync(path), Path.GetFileNameWithoutExtension(path));
+        _ = ScanAsync(() => WindowsOcr.ScanFileAsync(path), Path.GetFileNameWithoutExtension(path));
 
     private void ScanClipboard()
     {
@@ -986,7 +986,7 @@ public partial class MainWindow : Window
         {
             if (Clipboard.ContainsImage() && Clipboard.GetImage() is { } img)
             {
-                _ = ScanAsync(() => ScreenshotScan.ScanImageAsync(img), "Screenshot");
+                _ = ScanAsync(() => WindowsOcr.ScanImageAsync(img), "Screenshot");
                 return;
             }
             var file = Clipboard.ContainsFileDropList()

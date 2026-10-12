@@ -30,7 +30,10 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
-    <PackageReference Include="SSH.NET" Version="2026.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SessionManager.Core\SessionManager.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

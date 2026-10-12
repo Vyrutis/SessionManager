@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The Linux app (Avalonia). It also runs on Windows, which is handy for development, but the Windows
+       release is the WPF app in src/SessionManager. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>sessionmanager</AssemblyName>
+    <RootNamespace>SessionManager</RootNamespace>
+    <Product>Session Manager</Product>
+    <Version>1.2.0</Version>
+    <Company>Session Manager</Company>
+    <ApplicationIcon>..\SessionManager\Assets\app.ico</ApplicationIcon>
+    <BuiltInComInteropSupport>false</BuiltInComInteropSupport>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- Avalonia 11.3 marks the classic clipboard / drag-and-drop API obsolete in favour of a new one; the classic one
+         still works on every platform and is what the app uses. -->
+    <NoWarn>$(NoWarn);CS0618</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.3.22" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.22" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.22" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.22" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SessionManager.Core\SessionManager.Core.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -4,10 +4,13 @@ using System.Text.Json.Serialization;
 
 namespace SessionManager;
 
-/// <summary>Loads and saves the session tree to %APPDATA%\SessionManager\sessions.json.</summary>
+/// <summary>Loads and saves the session tree to sessions.json in <see cref="DataDir"/>.</summary>
 public sealed class SessionStore
 {
-    /// <summary>%APPDATA%\SessionManager, or SESSIONMANAGER_DATA when set (for a separate test copy).</summary>
+    /// <summary>
+    /// %APPDATA%\SessionManager on Windows, $XDG_CONFIG_HOME/SessionManager (~/.config/SessionManager) on Linux,
+    /// or SESSIONMANAGER_DATA when set (for a separate test copy).
+    /// </summary>
     public static readonly string DataDir = Environment.GetEnvironmentVariable("SESSIONMANAGER_DATA") is { Length: > 0 } custom
         ? Path.GetFullPath(custom)
         : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SessionManager");
@@ -49,8 +52,8 @@ public sealed class SessionStore
         Data.Roots ??= new();
         Data.Credentials ??= new();
         Data.Presets ??= new();
-        Data.Ui = Theme.Normalize(Data.Ui);
-        Data.Domains = (Data.Domains ?? new()).Select(DomainPicker.Clean).Where(d => d.Length > 0)
+        Data.Ui = UiSettings.Normalize(Data.Ui);
+        Data.Domains = (Data.Domains ?? new()).Select(DomainName.Clean).Where(d => d.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         foreach (var key in Data.Presets.Keys.ToList()) Data.Presets[key] = SessionFile.Normalize(Data.Presets[key]);
 

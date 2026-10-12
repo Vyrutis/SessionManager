@@ -69,22 +69,13 @@ public sealed class DomainPicker : Grid
 
     public ComboBox Box => _box;
 
-    public static string Clean(string? domain) => (domain ?? "").Trim().TrimEnd('\\').Trim();
+    public static string Clean(string? domain) => DomainName.Clean(domain);
 
     /// <summary>"CORP" + "admin" → "CORP\admin".</summary>
-    public static string Combine(string domain, string user)
-    {
-        domain = Clean(domain);
-        return domain.Length == 0 || user.Length == 0 ? user : $"{domain}\\{user}";
-    }
+    public static string Combine(string domain, string user) => DomainName.Combine(domain, user);
 
     /// <summary>"CORP\admin" → ("CORP", "admin"); a name without a domain is returned unchanged.</summary>
-    public static (string Domain, string User) Split(string? user)
-    {
-        user ??= "";
-        int i = user.IndexOf('\\');
-        return i > 0 && i < user.Length - 1 ? (user[..i], user[(i + 1)..]) : ("", user);
-    }
+    public static (string Domain, string User) Split(string? user) => DomainName.Split(user);
 
     /// <summary>Remembers a domain without the star (e.g. one used in a saved session). Returns true if it was new.</summary>
     public static bool Remember(string? domain)

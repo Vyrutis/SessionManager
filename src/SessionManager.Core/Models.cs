@@ -181,4 +181,26 @@ public sealed class UiSettings
     public bool Animations { get; set; } = true;
 
     public UiSettings Clone() => (UiSettings)MemberwiseClone();
+
+    public const double MinScale = 0.8, MaxScale = 1.5;
+    public const double MinVisibility = 0.1, MaxVisibility = 0.85;
+
+    /// <summary>Replaces unreadable colors and out-of-range numbers (e.g. from a hand-edited file) with defaults.</summary>
+    public static UiSettings Normalize(UiSettings? ui)
+    {
+        ui ??= new UiSettings();
+        if (!IsColor(ui.Accent)) ui.Accent = null;
+        if (!IsColor(ui.Main)) ui.Main = null;
+        if (string.IsNullOrWhiteSpace(ui.BackgroundImage)) ui.BackgroundImage = null;
+        ui.BackgroundVisibility = Clamp(ui.BackgroundVisibility, MinVisibility, MaxVisibility, 0.35);
+        ui.Scale = Clamp(ui.Scale, MinScale, MaxScale, 1.0);
+        return ui;
+    }
+
+    /// <summary>#RRGGBB (the # is optional).</summary>
+    public static bool IsColor(string? hex) =>
+        hex != null && System.Text.RegularExpressions.Regex.IsMatch(hex.Trim(), "^#?[0-9A-Fa-f]{6}$");
+
+    private static double Clamp(double v, double min, double max, double fallback) =>
+        double.IsFinite(v) ? Math.Clamp(v, min, max) : fallback;
 }

@@ -114,10 +114,10 @@ static class ImportTests
             {
                 var img = RenderText(["Server inventory", "", "Name        IP              User        Password", "web01       10.20.30.40     admin       Blue#Sky42",
                                       "files       10.20.30.41     backup      River-77", "dc01 (RDP)  10.20.30.42     CORP\\jsmith  Winter2026"]);
-                ocr = ScreenshotScan.ScanImageAsync(img).GetAwaiter().GetResult().Items;
+                ocr = WindowsOcr.ScanImageAsync(img).GetAwaiter().GetResult().Items;
                 var pdfPath = Path.Combine(dir, "servers.pdf");
                 File.WriteAllBytes(pdfPath, MakePdf(["Host: 172.16.5.10", "Username: deploy", "Password: Tr33house", "", "RDP server: 172.16.5.20", "Login: CORP\\ops", "Password: Gr4nite"]));
-                var res = ScreenshotScan.ScanFileAsync(pdfPath).GetAwaiter().GetResult();
+                var res = WindowsOcr.ScanFileAsync(pdfPath).GetAwaiter().GetResult();
                 pdf = res.Items; pdfText = res.Text;
             }
             catch (Exception e) { ocrError = e; }

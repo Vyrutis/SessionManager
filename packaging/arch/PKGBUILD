@@ -1,0 +1,61 @@
+# Session Manager: build the Arch package from this source checkout.
+#
+#   cd packaging/arch && makepkg -si
+#
+# Needs the .NET 10 SDK to build (sudo pacman -S dotnet-sdk, or dotnet-sdk-bin from the AUR if the repository
+# version is older). No SDK at hand? Use ../arch-bin with the prebuilt release tarball instead.
+
+pkgname=sessionmanager
+pkgver=1.2.0
+pkgrel=1
+pkgdesc="SSH and Remote Desktop session manager: tabs, SFTP, port forwarding, imports and screenshot/PDF scanning"
+arch=('x86_64')
+url="https://github.com/Vyrutis/SessionManager"
+license=('LicenseRef-custom')
+depends=('glibc' 'gcc-libs' 'zlib' 'icu' 'openssl' 'krb5'
+         'fontconfig' 'freetype2' 'libx11' 'libxcursor' 'libxrandr' 'libxi' 'libice' 'libsm'
+         'freerdp' 'libsecret' 'ttf-dejavu' 'hicolor-icon-theme')
+makedepends=('dotnet-sdk')
+optdepends=('gnome-keyring: keyring for saved passwords (KWallet or KeePassXC with Secret Service work too)'
+            'tesseract: scan screenshots and PDFs for connections'
+            'tesseract-data-eng: English text recognition data for scanning'
+            'poppler: scan PDF files'
+            'wl-clipboard: paste screenshots for scanning on Wayland'
+            'xclip: paste screenshots for scanning on X11'
+            'xdg-utils: open links and files edited over SFTP')
+options=('!strip' '!debug')
+source=()
+
+# The source tree this PKGBUILD lives in (packaging/arch → the repository root).
+_root() { cd "$startdir/../.." && pwd; }
+
+prepare() {
+  if ! dotnet --list-sdks 2>/dev/null | grep -q '^1[0-9]\.'; then
+    echo "The .NET 10 SDK is needed to build. Install dotnet-sdk (10.x) or dotnet-sdk-bin from the AUR," >&2
+    echo "or build the prebuilt package in packaging/arch-bin instead." >&2
+    return 1
+  fi
+}
+
+build() {
+  cd "$(_root)"
+  export DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1
+  dotnet publish src/SessionManager.Linux/SessionManager.Linux.csproj -c Release -r linux-x64 --self-contained true \
+    -p:PublishReadyToRun=true -p:DebugType=none -o "$srcdir/app" -nologo
+}
+
+package() {
+  cd "$(_root)/packaging/linux"
+  install -dm755 "$pkgdir/usr/lib/$pkgname"
+  cp -r "$srcdir/app/." "$pkgdir/usr/lib/$pkgname/"
+  find "$pkgdir/usr/lib/$pkgname" -type f -exec chmod 644 {} +
+  chmod 755 "$pkgdir/usr/lib/$pkgname/sessionmanager" "$pkgdir/usr/lib/$pkgname/createdump"
+  install -dm755 "$pkgdir/usr/bin"
+  ln -s "/usr/lib/$pkgname/sessionmanager" "$pkgdir/usr/bin/sessionmanager"
+
+  install -Dm644 sessionmanager.desktop "$pkgdir/usr/share/applications/sessionmanager.desktop"
+  install -Dm644 sessionmanager-mime.xml "$pkgdir/usr/share/mime/packages/sessionmanager.xml"
+  for size in 16 32 48 64 128 256; do
+    install -Dm644 "icons/sessionmanager-$size.png" "$pkgdir/usr/share/icons/hicolor/${size}x${size}/apps/sessionmanager.png"
+  done
+}

@@ -210,7 +210,7 @@ public sealed class SshTerminalView : Grid, ISessionView
         Write($"\x1b[{color}m{text}\x1b[0m\r\n");
     }
 
-    private SshUi Ui => new() { AskPassword = _askPassword, Log = Log, Anchor = this };
+    private SshUi Ui => SshUiWpf.Create(this, _askPassword, Log);
 
     private void SetStatus(TabStatus s)
     {
@@ -248,7 +248,7 @@ public sealed class SshTerminalView : Grid, ISessionView
             if (_disposed) { Cleanup(); return; }
 
             // Both wait for the server (a remote forward waits for its reply), so keep them off the UI thread.
-            var background = new SshUi { AskPassword = _askPassword, Anchor = this, Log = (t, k) => Dispatcher.InvokeAsync(() => Log(t, k)) };
+            var background = SshUiWpf.Create(this, _askPassword, (t, k) => Dispatcher.InvokeAsync(() => Log(t, k)));
             var (cols, rows) = (_cols, _rows);
             var shell = await Task.Run(() =>
             {

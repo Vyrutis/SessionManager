@@ -1,16 +1,12 @@
 using System.IO;
 using System.Net;
 using System.Text.RegularExpressions;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using WinImaging = Windows.Graphics.Imaging;
-using WinOcr = Windows.Media.Ocr;
 
 namespace SessionManager;
 
 /// <summary>
 /// Finds connections in a picture or PDF (a server list, a wiki page, an e-mail, a spreadsheet...).
-/// Windows' built-in OCR reads the text, the words are put back into rows and columns by their position,
+/// OCR (Windows text recognition, or Tesseract on Linux) reads the text, the words are put back into rows and columns by their position,
 /// then hosts, ports, user names, passwords and the protocol are picked out of each row.
 /// Everything runs on this PC; nothing is uploaded.
 /// </summary>
@@ -31,118 +27,26 @@ public static class ScreenshotScan
 
     public const int MaxPdfPages = 60;
 
-    // ───────────── Inputs ─────────────
+    // ───────────── Words → rows and cells ─────────────
 
-    public static Task<Result> ScanImageAsync(BitmapSource image) => ScanAsync(async () => [await ToSoftwareBitmap(image)]);
-
-    public static Task<Result> ScanFileAsync(string path) =>
-        Path.GetExtension(path).Equals(".pdf", StringComparison.OrdinalIgnoreCase)
-            ? ScanAsync(() => RenderPdf(path))
-            : ScanImageAsync(LoadFile(path));
-
-    private static async Task<Result> ScanAsync(Func<Task<List<WinImaging.SoftwareBitmap>>> pages)
-    {
-        var engine = CreateEngine();
-        var rows = new List<Row>();
-        foreach (var page in await pages())
-        {
-            using (page)
-            {
-                var ocr = await engine.RecognizeAsync(page);
-                rows.AddRange(ToRows(ocr));
-            }
-            rows.Add(new Row([])); // page break: nothing carries over from one page to the next
-        }
-        var text = string.Join("\n", rows.Select(r => r.Text)).Trim();
-        return new Result(Extract(rows), text);
-    }
-
-    public static BitmapSource LoadFile(string path)
-    {
-        var img = new BitmapImage();
-        img.BeginInit();
-        img.CacheOption = BitmapCacheOption.OnLoad;
-        img.UriSource = new Uri(Path.GetFullPath(path));
-        img.EndInit();
-        img.Freeze();
-        return img;
-    }
-
-    private static WinOcr.OcrEngine CreateEngine() =>
-        WinOcr.OcrEngine.TryCreateFromUserProfileLanguages()
-        ?? WinOcr.OcrEngine.TryCreateFromLanguage(new Windows.Globalization.Language("en-US"))
-        ?? throw new InvalidOperationException("Windows text recognition (OCR) is not available. Add a language with OCR support in Settings > Time & language > Language & region.");
-
-    private static async Task<WinImaging.SoftwareBitmap> ToSoftwareBitmap(BitmapSource image)
-    {
-        // Small text recognizes much better when enlarged; stay under the engine's size limit.
-        double max = WinOcr.OcrEngine.MaxImageDimension;
-        double longest = Math.Max(image.PixelWidth, image.PixelHeight);
-        double scale = longest < 1400 ? 2 : 1;
-        if (longest * scale > max) scale = max / longest;
-        BitmapSource src = Math.Abs(scale - 1) > 0.01 ? new TransformedBitmap(image, new ScaleTransform(scale, scale)) : image;
-
-        var encoder = new PngBitmapEncoder();
-        encoder.Frames.Add(BitmapFrame.Create(src));
-        var ms = new MemoryStream();
-        encoder.Save(ms);
-        ms.Position = 0;
-        return await Decode(ms.AsRandomAccessStream());
-    }
-
-    private static async Task<WinImaging.SoftwareBitmap> Decode(Windows.Storage.Streams.IRandomAccessStream stream)
-    {
-        using (stream)
-        {
-            var decoder = await WinImaging.BitmapDecoder.CreateAsync(stream);
-            return await decoder.GetSoftwareBitmapAsync(WinImaging.BitmapPixelFormat.Bgra8, WinImaging.BitmapAlphaMode.Premultiplied);
-        }
-    }
-
-    /// <summary>Renders each PDF page at about 220 dpi (scanned and text PDFs alike) for the OCR.</summary>
-    private static async Task<List<WinImaging.SoftwareBitmap>> RenderPdf(string path)
-    {
-        var file = await Windows.Storage.StorageFile.GetFileFromPathAsync(Path.GetFullPath(path));
-        Windows.Data.Pdf.PdfDocument doc;
-        try { doc = await Windows.Data.Pdf.PdfDocument.LoadFromFileAsync(file); }
-        catch (Exception ex) when (ex.HResult == unchecked((int)0x8007052B)) // wrong password
-        { throw new InvalidOperationException("This PDF is password protected. Open it, print it to a new PDF without a password, and scan that.", ex); }
-
-        var pages = new List<WinImaging.SoftwareBitmap>();
-        uint count = Math.Min(doc.PageCount, MaxPdfPages);
-        for (uint i = 0; i < count; i++)
-        {
-            using var page = doc.GetPage(i);
-            double w = page.Size.Width, h = page.Size.Height; // in 1/96 inch
-            double scale = Math.Min(220.0 / 96, WinOcr.OcrEngine.MaxImageDimension / Math.Max(w, h));
-            var stream = new Windows.Storage.Streams.InMemoryRandomAccessStream();
-            await page.RenderToStreamAsync(stream, new Windows.Data.Pdf.PdfPageRenderOptions
-            {
-                DestinationWidth = (uint)(w * scale), DestinationHeight = (uint)(h * scale),
-                BackgroundColor = Windows.UI.Color.FromArgb(255, 255, 255, 255),
-            });
-            stream.Seek(0);
-            pages.Add(await Decode(stream));
-        }
-        return pages;
-    }
+    /// <summary>A recognized word and its box on the page (any unit, as long as all words use the same one).</summary>
+    public readonly record struct Word(string Text, double X, double Y, double Width, double Height);
 
     /// <summary>
     /// Puts OCR words back into visual rows (same height on the page) and cells (split at wide gaps),
     /// so a table "IP | user | password" stays together even when the OCR reports its columns separately.
     /// </summary>
-    private static List<Row> ToRows(WinOcr.OcrResult ocr)
+    public static List<Row> ToRows(IReadOnlyList<Word> words)
     {
-        var words = ocr.Lines.SelectMany(l => l.Words).Select(w => (w.Text, R: w.BoundingRect)).ToList();
         if (words.Count == 0) return [];
-        double lineHeight = words.Select(w => w.R.Height).OrderBy(x => x).ElementAt(words.Count / 2);
+        double lineHeight = words.Select(w => w.Height).OrderBy(x => x).ElementAt(words.Count / 2);
 
-        var rows = new List<List<(string Text, Windows.Foundation.Rect R)>>();
-        foreach (var w in words.OrderBy(w => w.R.Y + w.R.Height / 2))
+        var rows = new List<List<Word>>();
+        foreach (var w in words.OrderBy(w => w.Y + w.Height / 2))
         {
-            double cy = w.R.Y + w.R.Height / 2;
+            double cy = w.Y + w.Height / 2;
             var row = rows.LastOrDefault();
-            if (row != null && Math.Abs(cy - row.Average(x => x.R.Y + x.R.Height / 2)) < lineHeight * 0.55) row.Add(w);
+            if (row != null && Math.Abs(cy - row.Average(x => x.Y + x.Height / 2)) < lineHeight * 0.55) row.Add(w);
             else rows.Add([w]);
         }
 
@@ -152,21 +56,34 @@ public static class ScreenshotScan
             var cells = new List<Cell>();
             string text = "";
             double left = 0, right = 0;
-            foreach (var w in row.OrderBy(w => w.R.X))
+            foreach (var w in row.OrderBy(w => w.X))
             {
-                if (text.Length > 0 && w.R.X - right > lineHeight * 1.2)
+                if (text.Length > 0 && w.X - right > lineHeight * 1.2)
                 {
                     cells.Add(new Cell(text, left, right));
                     text = "";
                 }
-                if (text.Length == 0) { text = w.Text; left = w.R.X; }
+                if (text.Length == 0) { text = w.Text; left = w.X; }
                 else text += " " + w.Text;
-                right = w.R.X + w.R.Width;
+                right = w.X + w.Width;
             }
             if (text.Length > 0) cells.Add(new Cell(text, left, right));
             result.Add(new Row(cells));
         }
         return result;
+    }
+
+    /// <summary>Rows of all pages (an empty row between pages so nothing carries over) → connections and the plain text.</summary>
+    public static Result FromPages(IEnumerable<List<Row>> pages)
+    {
+        var rows = new List<Row>();
+        foreach (var page in pages)
+        {
+            rows.AddRange(page);
+            rows.Add(new Row([]));
+        }
+        var text = string.Join("\n", rows.Select(r => r.Text)).Trim();
+        return new Result(Extract(rows), text);
     }
 
     // ───────────── Picking connections out of the text ─────────────
@@ -368,7 +285,7 @@ public static class ScreenshotScan
             }
             if (c.Protocol == Protocol.Rdp)
             {
-                if (c.Domain.Length == 0 && c.Username.Contains('\\')) (c.Domain, c.Username) = DomainPicker.Split(c.Username);
+                if (c.Domain.Length == 0 && c.Username.Contains('\\')) (c.Domain, c.Username) = DomainName.Split(c.Username);
                 if (c.Domain.Length == 0)
                     for (int k = hit.Row; k < end; k++)
                         if (DomainLabel.Match(lines[k]) is { Success: true } dm) { c.Domain = dm.Groups[1].Value; break; }
@@ -410,7 +327,7 @@ public static class ScreenshotScan
                 c.Port = p;
                 break;
             case Role.Domain when c.Domain.Length == 0:
-                c.Domain = DomainPicker.Clean(value);
+                c.Domain = DomainName.Clean(value);
                 break;
             case Role.Protocol:
                 SetProto(hit, value);

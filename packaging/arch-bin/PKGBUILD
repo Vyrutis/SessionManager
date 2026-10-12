@@ -1,0 +1,49 @@
+# Session Manager: Arch package from the prebuilt release tarball (no .NET SDK needed).
+#
+#   cd packaging/arch-bin
+#   gh release download v1.2.0 -R Vyrutis/SessionManager -p 'sessionmanager-*-linux-x64.tar.gz'
+#   makepkg -si
+#
+# The repository is private, so the tarball is downloaded with the GitHub CLI (gh auth login first)
+# and makepkg takes it from this folder.
+
+pkgname=sessionmanager-bin
+_name=sessionmanager
+pkgver=1.2.0
+pkgrel=1
+pkgdesc="SSH and Remote Desktop session manager: tabs, SFTP, port forwarding, imports and screenshot/PDF scanning (prebuilt)"
+arch=('x86_64')
+url="https://github.com/Vyrutis/SessionManager"
+license=('LicenseRef-custom')
+provides=("$_name")
+conflicts=("$_name")
+depends=('glibc' 'gcc-libs' 'zlib' 'icu' 'openssl' 'krb5'
+         'fontconfig' 'freetype2' 'libx11' 'libxcursor' 'libxrandr' 'libxi' 'libice' 'libsm'
+         'freerdp' 'libsecret' 'ttf-dejavu' 'hicolor-icon-theme')
+optdepends=('gnome-keyring: keyring for saved passwords (KWallet or KeePassXC with Secret Service work too)'
+            'tesseract: scan screenshots and PDFs for connections'
+            'tesseract-data-eng: English text recognition data for scanning'
+            'poppler: scan PDF files'
+            'wl-clipboard: paste screenshots for scanning on Wayland'
+            'xclip: paste screenshots for scanning on X11'
+            'xdg-utils: open links and files edited over SFTP')
+options=('!strip' '!debug')
+source=("$_name-$pkgver-linux-x64.tar.gz")
+sha256sums=('SKIP')
+
+package() {
+  cd "$srcdir/$_name-$pkgver-linux-x64"
+  install -dm755 "$pkgdir/usr/lib/$_name"
+  cp -r app/. "$pkgdir/usr/lib/$_name/"
+  # Archives built on Windows have no executable bits; set permissions explicitly.
+  find "$pkgdir/usr/lib/$_name" -type f -exec chmod 644 {} +
+  chmod 755 "$pkgdir/usr/lib/$_name/sessionmanager" "$pkgdir/usr/lib/$_name/createdump"
+  install -dm755 "$pkgdir/usr/bin"
+  ln -s "/usr/lib/$_name/sessionmanager" "$pkgdir/usr/bin/sessionmanager"
+
+  install -Dm644 sessionmanager.desktop "$pkgdir/usr/share/applications/sessionmanager.desktop"
+  install -Dm644 sessionmanager-mime.xml "$pkgdir/usr/share/mime/packages/sessionmanager.xml"
+  for size in 16 32 48 64 128 256; do
+    install -Dm644 "icons/sessionmanager-$size.png" "$pkgdir/usr/share/icons/hicolor/${size}x${size}/apps/sessionmanager.png"
+  done
+}

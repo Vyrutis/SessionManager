@@ -4,18 +4,38 @@ using System.Text;
 namespace SessionManager;
 
 /// <summary>
-/// Stores session passwords in Windows Credential Manager (encrypted with the user's Windows login).
-/// They show up under "Windows Credentials" as SessionManager:{session id}.
+/// Stores session passwords outside the app's files: in Windows Credential Manager (encrypted with the user's Windows
+/// login; listed under "Windows Credentials" as SessionManager:{session id}), or on Linux in the desktop keyring
+/// (GNOME Keyring, KWallet or KeePassXC, through the Secret Service and libsecret's secret-tool).
 /// </summary>
 public static class CredentialStore
 {
+    public static string? Get(Guid id) => OperatingSystem.IsWindows() ? WinGet(id) : SecretService.Get(id);
+
+    public static bool Has(Guid id) => Get(id) != null;
+
+    /// <exception cref="InvalidOperationException">The password could not be saved; the message says why.</exception>
+    public static void Set(Guid id, string password, string? userName = null)
+    {
+        if (OperatingSystem.IsWindows()) WinSet(id, password, userName);
+        else SecretService.Set(id, password, userName);
+    }
+
+    public static void Delete(Guid id)
+    {
+        if (OperatingSystem.IsWindows()) WinDelete(id);
+        else SecretService.Delete(id);
+    }
+
+    // ───────────── Windows Credential Manager ─────────────
+
     private const uint CRED_TYPE_GENERIC = 1;
     private const uint CRED_PERSIST_LOCAL_MACHINE = 2;
     private const int ERROR_NOT_FOUND = 1168;
 
     private static string Target(Guid id) => $"SessionManager:{id}";
 
-    public static string? Get(Guid id)
+    private static string? WinGet(Guid id)
     {
         if (!CredRead(Target(id), CRED_TYPE_GENERIC, 0, out var ptr)) return null;
         try
@@ -30,9 +50,7 @@ public static class CredentialStore
         }
     }
 
-    public static bool Has(Guid id) => Get(id) != null;
-
-    public static void Set(Guid id, string password, string? userName = null)
+    private static void WinSet(Guid id, string password, string? userName)
     {
         var bytes = Encoding.Unicode.GetBytes(password);
         var blob = Marshal.AllocHGlobal(Math.Max(bytes.Length, 1));
@@ -59,7 +77,7 @@ public static class CredentialStore
         }
     }
 
-    public static void Delete(Guid id)
+    private static void WinDelete(Guid id)
     {
         if (!CredDelete(Target(id), CRED_TYPE_GENERIC, 0) && Marshal.GetLastWin32Error() != ERROR_NOT_FOUND)
             throw new InvalidOperationException($"Could not delete the saved password (error {Marshal.GetLastWin32Error()}).");

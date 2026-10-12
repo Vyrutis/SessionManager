@@ -1,7 +1,6 @@
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
-using System.Windows;
 using Renci.SshNet;
 using Renci.SshNet.Common;
 using Renci.SshNet.Messages.Transport;
@@ -10,13 +9,32 @@ namespace SessionManager;
 
 public enum LogKind { Info, Warning, Error }
 
-/// <summary>Callbacks a connection uses to talk to the user. AskPassword is called on the UI thread.</summary>
+/// <summary>A server key that is not remembered yet, or that differs from the remembered one.</summary>
+public sealed record HostKeyQuestion(string Host, int Port, string KeyType, string Fingerprint, string? Stored)
+{
+    public bool Changed => Stored != null;
+
+    public string Message => !Changed
+        ? $"This is the first connection to {Host}:{Port}.\n\nServer key ({KeyType}):\n{Fingerprint}\n\n" +
+          "If you trust this server, choose Yes to remember the key and connect."
+        : $"WARNING: the server key for {Host}:{Port} has CHANGED.\n\n" +
+          $"Remembered key:\n{Stored}\n\nKey offered now:\n{KeyType} {Fingerprint}\n\n" +
+          "This can mean the server was reinstalled, or that someone is intercepting the connection.\n\n" +
+          "Replace the remembered key and connect anyway?";
+}
+
+/// <summary>Callbacks a connection uses to talk to the user. The password prompts are called on the UI thread.</summary>
 public sealed class SshUi
 {
-    public required Func<string, bool, (string Password, bool Save)?> AskPassword { get; init; }
+    /// <summary>(prompt, offer saving) → password, or null when cancelled. Used when <see cref="AskPasswordAsync"/> isn't set.</summary>
+    public Func<string, bool, (string Password, bool Save)?>? AskPassword { get; init; }
+    /// <summary>The same as an asynchronous dialog (UI toolkits without blocking dialogs).</summary>
+    public Func<string, bool, Task<(string Password, bool Save)?>>? AskPasswordAsync { get; init; }
     public required Action<string, LogKind> Log { get; init; }
-    /// <summary>Any element in the window; used to show the host-key dialog on the UI thread.</summary>
-    public required FrameworkElement Anchor { get; init; }
+    /// <summary>Asks whether to trust a new or changed server key. Called on a background thread; blocks until answered.</summary>
+    public required Func<HostKeyQuestion, bool> ConfirmHostKey { get; init; }
+    /// <summary>Runs an action on the UI thread (for messages from background threads).</summary>
+    public required Action<Action> Post { get; init; }
 }
 
 /// <summary>Who to log in as. A password typed at a prompt is kept here (and saved when the user asks).</summary>
@@ -66,14 +84,14 @@ public static class SshConnector
 
             if (methods.Count == 0)
             {
-                if (!Prompt(login, target, ui)) throw new OperationCanceledException("Cancelled.");
+                if (!await Prompt(login, target, ui)) throw new OperationCanceledException("Cancelled.");
                 continue;
             }
 
             var info = new ConnectionInfo(host, port, s.Username, methods.ToArray()) { Timeout = TimeSpan.FromSeconds(15) };
             var client = create(info);
             // Verify against the real host name, even when connecting through a forwarded local port.
-            client.HostKeyReceived += (_, e) => e.CanTrust = VerifyHostKey(ui.Anchor, s.Host, s.Port, e);
+            client.HostKeyReceived += (_, e) => e.CanTrust = VerifyHostKey(ui, s.Host, s.Port, e);
             try
             {
                 await Task.Run(client.Connect);
@@ -84,7 +102,7 @@ public static class SshConnector
                 client.Dispose();
                 ui.Log($"Authentication failed for {login.Role}{target}.", LogKind.Error);
                 if (attempt >= 4) throw;
-                if (!Prompt(login, target, ui)) throw new OperationCanceledException("Cancelled.");
+                if (!await Prompt(login, target, ui)) throw new OperationCanceledException("Cancelled.");
             }
             catch (SshConnectionException ex) when (ex.DisconnectReason == DisconnectReason.HostKeyNotVerifiable)
             {
@@ -189,7 +207,7 @@ public static class SshConnector
                     'R' => new ForwardedPortRemote(t.BindHost, t.BindPort, t.Host, t.Port),
                     _ => new ForwardedPortDynamic(t.BindHost, t.BindPort),
                 };
-                port.Exception += (_, e) => ui.Anchor.Dispatcher.InvokeAsync(() => ui.Log($"Tunnel {line.Trim()}: {e.Exception.Message}", LogKind.Warning));
+                port.Exception += (_, e) => ui.Post(() => ui.Log($"Tunnel {line.Trim()}: {e.Exception.Message}", LogKind.Warning));
                 client.AddForwardedPort(port);
                 port.Start();
                 ui.Log($"Tunnel: {t}", LogKind.Info);
@@ -203,9 +221,11 @@ public static class SshConnector
 
     // ───────────── Authentication ─────────────
 
-    private static bool Prompt(SshLogin login, string target, SshUi ui)
+    private static async Task<bool> Prompt(SshLogin login, string target, SshUi ui)
     {
-        var result = ui.AskPassword($"Password for {login.Role}{target}:", login.SaveId != null);
+        var text = $"Password for {login.Role}{target}:";
+        var result = ui.AskPasswordAsync != null ? await ui.AskPasswordAsync(text, login.SaveId != null)
+            : ui.AskPassword?.Invoke(text, login.SaveId != null);
         if (result == null) return false;
         login.Password = result.Value.Password;
         if (result.Value.Save && login.SaveId is Guid id)
@@ -222,7 +242,7 @@ public static class SshConnector
         var methods = new List<AuthenticationMethod>();
         var user = s.Username;
 
-        // Explicit key file first, then the usual keys in %USERPROFILE%\.ssh.
+        // Explicit key file first, then the usual keys in ~/.ssh (%USERPROFILE%\.ssh on Windows).
         var keys = new List<IPrivateKeySource>();
         if (!string.IsNullOrWhiteSpace(s.PrivateKeyPath))
         {
@@ -264,38 +284,14 @@ public static class SshConnector
     }
 
     /// <summary>Called on a background thread by SSH.NET.</summary>
-    private static bool VerifyHostKey(FrameworkElement anchor, string host, int port, HostKeyEventArgs e)
+    private static bool VerifyHostKey(SshUi ui, string host, int port, HostKeyEventArgs e)
     {
         var fp = "SHA256:" + e.FingerPrintSHA256;
         var result = KnownHosts.Check(host, port, e.HostKeyName, fp, out var stored);
         if (result == KnownHosts.Result.Match) return true;
-
-        return anchor.Dispatcher.Invoke(() =>
-        {
-            var owner = Window.GetWindow(anchor);
-            string message;
-            MessageBoxImage icon;
-            if (result == KnownHosts.Result.Unknown)
-            {
-                message = $"This is the first connection to {host}:{port}.\n\nServer key ({e.HostKeyName}):\n{fp}\n\n" +
-                          "If you trust this server, choose Yes to remember the key and connect.";
-                icon = MessageBoxImage.Question;
-            }
-            else
-            {
-                message = $"WARNING: the server key for {host}:{port} has CHANGED.\n\n" +
-                          $"Remembered key:\n{stored}\n\nKey offered now:\n{e.HostKeyName} {fp}\n\n" +
-                          "This can mean the server was reinstalled, or that someone is intercepting the connection.\n\n" +
-                          "Replace the remembered key and connect anyway?";
-                icon = MessageBoxImage.Warning;
-            }
-            var answer = owner != null
-                ? MessageBox.Show(owner, message, "Verify server key", MessageBoxButton.YesNo, icon,
-                    result == KnownHosts.Result.Unknown ? MessageBoxResult.Yes : MessageBoxResult.No)
-                : MessageBox.Show(message, "Verify server key", MessageBoxButton.YesNo, icon, MessageBoxResult.No);
-            if (answer != MessageBoxResult.Yes) return false;
-            KnownHosts.Trust(host, port, e.HostKeyName, fp);
-            return true;
-        });
+        if (!ui.ConfirmHostKey(new HostKeyQuestion(host, port, e.HostKeyName, fp, result == KnownHosts.Result.Changed ? stored : null)))
+            return false;
+        KnownHosts.Trust(host, port, e.HostKeyName, fp);
+        return true;
     }
 }

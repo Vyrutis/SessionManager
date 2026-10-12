@@ -38,16 +38,22 @@ public static class ConnectionImport
     public static string SshConfigPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ssh", "config");
 
+    /// <summary>PuTTY on Linux keeps one file per saved session here.</summary>
+    public static string PuttyDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".putty", "sessions");
+
     public static bool HasPutty()
     {
+        if (!OperatingSystem.IsWindows())
+            return Directory.Exists(PuttyDir) && Directory.EnumerateFiles(PuttyDir).Any();
         using var key = Registry.CurrentUser.OpenSubKey(PuttyKey);
         return key != null && key.SubKeyCount > 0;
     }
 
-    // ───────────── PuTTY (registry) ─────────────
+    // ───────────── PuTTY (registry on Windows, ~/.putty/sessions on Linux) ─────────────
 
     public static List<ImportedConnection> FromPutty()
     {
+        if (!OperatingSystem.IsWindows()) return FromPuttyFiles(PuttyDir);
         var list = new List<ImportedConnection>();
         using var root = Registry.CurrentUser.OpenSubKey(PuttyKey);
         if (root == null) return list;
@@ -79,6 +85,7 @@ public static class ConnectionImport
 
     public static bool HasMstscHistory()
     {
+        if (!OperatingSystem.IsWindows()) return false;
         using var servers = Registry.CurrentUser.OpenSubKey(MstscKey + @"\Servers");
         using var mru = Registry.CurrentUser.OpenSubKey(MstscKey + @"\Default");
         return (servers?.SubKeyCount ?? 0) > 0 || (mru?.ValueCount ?? 0) > 0;
@@ -88,11 +95,12 @@ public static class ConnectionImport
     public static List<ImportedConnection> FromMstscHistory()
     {
         var list = new List<ImportedConnection>();
+        if (!OperatingSystem.IsWindows()) return list;
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         void Add(string address, string userHint)
         {
             if (ParseAddress(address) is not { } a || !seen.Add(address.Trim())) return;
-            var (domain, user) = DomainPicker.Split(userHint.Trim());
+            var (domain, user) = DomainName.Split(userHint.Trim());
             list.Add(new ImportedConnection
             {
                 Name = a.Host, Protocol = Protocol.Rdp, Host = a.Host, Port = a.Port ?? 3389, Username = user, Domain = domain,
@@ -152,7 +160,9 @@ public static class ConnectionImport
                 foreach (var f in Directory.EnumerateFiles(root, "*.rdp", options))
                 {
                     cancel.ThrowIfCancellationRequested();
-                    if (f.Contains(@"\AppData\", StringComparison.OrdinalIgnoreCase) || f.Contains(@"\node_modules\", StringComparison.OrdinalIgnoreCase)) continue;
+                    var rel = f[root.Length..].Replace('\\', '/');
+                    if (rel.Contains("/AppData/", StringComparison.OrdinalIgnoreCase) || rel.Contains("/node_modules/", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (!OperatingSystem.IsWindows() && rel.Contains("/.")) continue; // hidden folders (caches, app data)
                     // Online-only cloud files would be downloaded just by reading them.
                     var attrs = (int)File.GetAttributes(f);
                     if ((attrs & 0x400000) != 0 || (attrs & 0x40000) != 0) continue; // RECALL_ON_DATA_ACCESS / RECALL_ON_OPEN
@@ -311,7 +321,7 @@ public static class ConnectionImport
             if (host.Length == 0) continue;
             var user = f[3].Trim();
             string domain = "";
-            if (protocol == Protocol.Rdp) (domain, user) = DomainPicker.Split(user);
+            if (protocol == Protocol.Rdp) (domain, user) = DomainName.Split(user);
             list.Add(new ImportedConnection
             {
                 Name = key, Protocol = protocol, Host = host,
@@ -367,7 +377,7 @@ public static class ConnectionImport
             var user = Get(cUser);
             if (user.Length == 0) user = urlUser;
             var domain = Get(cDomain);
-            if (domain.Length == 0 && protocol == Protocol.Rdp) (domain, user) = DomainPicker.Split(user);
+            if (domain.Length == 0 && protocol == Protocol.Rdp) (domain, user) = DomainName.Split(user);
             var pass = Get(cPass);
             list.Add(new ImportedConnection
             {
@@ -453,13 +463,123 @@ public static class ConnectionImport
     {
         var ext = Path.GetExtension(path).ToLowerInvariant();
         if (ext == ".csv" || ext == ".tsv") return (FromCsv(path), "CSV");
+        if (ext == ".remmina") return (FromRemminaFiles([path]), "Remmina");
         if (ext == ".mxtsessions" || Path.GetFileName(path).Equals("MobaXterm.ini", StringComparison.OrdinalIgnoreCase)) return (FromMobaXterm(path), "MobaXterm");
         if (ext == ".xml") return (FromMRemoteNG(path), "mRemoteNG");
 
         var head = new string(File.ReadAllText(path).Take(4096).ToArray());
         if (head.TrimStart().StartsWith('<')) return (FromMRemoteNG(path), "mRemoteNG");
         if (head.Contains("[Bookmarks", StringComparison.OrdinalIgnoreCase)) return (FromMobaXterm(path), "MobaXterm");
+        if (head.Contains("[remmina]", StringComparison.OrdinalIgnoreCase)) return (FromRemminaFiles([path]), "Remmina");
         if (Regex.IsMatch(head, @"^\s*Host\s+\S", RegexOptions.Multiline | RegexOptions.IgnoreCase)) return (FromSshConfig(path), "SSH config");
         return (FromCsv(path), "CSV");
+    }
+
+    // ───────────── PuTTY on Linux / Remmina ─────────────
+
+    /// <summary>Reads PuTTY's per-session files (key=value lines, as written by PuTTY on Linux).</summary>
+    public static List<ImportedConnection> FromPuttyFiles(string dir)
+    {
+        var list = new List<ImportedConnection>();
+        if (!Directory.Exists(dir)) return list;
+        foreach (var file in Directory.EnumerateFiles(dir).OrderBy(f => f, StringComparer.Ordinal))
+        {
+            var v = ReadKeyValues(file);
+            if (!v.GetValueOrDefault("Protocol", "ssh").Equals("ssh", StringComparison.OrdinalIgnoreCase)) continue;
+            var host = v.GetValueOrDefault("HostName", "").Trim();
+            if (host.Length == 0) continue; // "Default Settings" and empty templates
+            var user = v.GetValueOrDefault("UserName", "").Trim();
+            int at = host.LastIndexOf('@');
+            if (at > 0) { if (user.Length == 0) user = host[..at]; host = host[(at + 1)..]; }
+            int port = int.TryParse(v.GetValueOrDefault("PortNumber"), out var p) && p is > 0 and < 65536 ? p : 22;
+            list.Add(new ImportedConnection
+            {
+                Name = Uri.UnescapeDataString(Path.GetFileName(file)), Protocol = Protocol.Ssh, Host = host, Port = port, Username = user,
+                PrivateKeyPath = v.GetValueOrDefault("PublicKeyFile", "").Trim(), SourcePath = file,
+            });
+        }
+        return list;
+    }
+
+    /// <summary>Where Remmina (the usual Linux remote desktop client) keeps its connection profiles.</summary>
+    public static IEnumerable<string> RemminaDirs()
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var data = Environment.GetEnvironmentVariable("XDG_DATA_HOME") is { Length: > 0 } x ? x : Path.Combine(home, ".local", "share");
+        return new[]
+        {
+            Path.Combine(data, "remmina"),
+            Path.Combine(home, ".remmina"),
+            Path.Combine(home, ".var", "app", "org.remmina.Remmina", "data", "remmina"), // Flatpak
+        }.Where(Directory.Exists);
+    }
+
+    public static List<string> RemminaFiles() =>
+        RemminaDirs().SelectMany(d => Directory.EnumerateFiles(d, "*.remmina")).ToList();
+
+    public static bool HasRemmina() => RemminaFiles().Count > 0;
+
+    /// <summary>
+    /// Reads Remmina profiles (.remmina, INI format): RDP and SSH/SFTP connections with server, user, domain, group
+    /// and RDP display options. Remmina's saved passwords are encrypted with its own key and are not read.
+    /// </summary>
+    public static List<ImportedConnection> FromRemminaFiles(IEnumerable<string> files)
+    {
+        var list = new List<ImportedConnection>();
+        foreach (var file in files)
+        {
+            Dictionary<string, string> v;
+            try { v = ReadKeyValues(file); } catch (IOException) { continue; }
+            var proto = v.GetValueOrDefault("protocol", "").ToUpperInvariant();
+            Protocol protocol;
+            if (proto == "RDP") protocol = Protocol.Rdp;
+            else if (proto is "SSH" or "SFTP") protocol = Protocol.Ssh;
+            else continue; // VNC, SPICE, X2Go...: nothing this app can open
+            if (ParseAddress(v.GetValueOrDefault("server", "").Trim()) is not { } a) continue;
+            var user = v.GetValueOrDefault("username", "").Trim();
+            if (user.Length == 0) user = a.User;
+            var domain = v.GetValueOrDefault("domain", "").Trim();
+            if (protocol == Protocol.Rdp && domain.Length == 0) (domain, user) = DomainName.Split(user);
+
+            SessionSettings? template = null;
+            if (protocol == Protocol.Rdp)
+            {
+                template = SessionSettings.DefaultsFor(Protocol.Rdp);
+                // resolution_mode 0 = custom size (1 = this screen, 2 = window size); older files have only the size.
+                if (v.GetValueOrDefault("resolution_mode", "0") == "0"
+                    && int.TryParse(v.GetValueOrDefault("resolution_width"), out var w) && w > 0
+                    && int.TryParse(v.GetValueOrDefault("resolution_height"), out var h) && h > 0)
+                { template.Width = w; template.Height = h; }
+                if (int.TryParse(v.GetValueOrDefault("colordepth"), out var depth) && depth is 8 or 15 or 16 or 24 or 32) template.ColorDepth = depth;
+                template.RedirectDrives = v.GetValueOrDefault("sharefolder", "").Trim().Length > 0;
+                template.RedirectPrinters = v.GetValueOrDefault("shareprinter") == "1";
+                template.RedirectClipboard = v.GetValueOrDefault("disableclipboard") != "1";
+            }
+            var name = v.GetValueOrDefault("name", "").Trim();
+            list.Add(new ImportedConnection
+            {
+                Name = name.Length > 0 ? name : a.Host, Protocol = protocol, Host = a.Host, Port = a.Port ?? DefaultPort(protocol),
+                Username = user, Domain = domain,
+                Folder = v.GetValueOrDefault("group", "").Trim().Trim('/'),
+                PrivateKeyPath = protocol == Protocol.Ssh ? v.GetValueOrDefault("ssh_privatekey", "").Trim() : "",
+                Template = template, SourcePath = file,
+            });
+        }
+        return list;
+    }
+
+    /// <summary>key=value lines; [sections] and comments are ignored, the first value of a key wins.</summary>
+    private static Dictionary<string, string> ReadKeyValues(string path)
+    {
+        var v = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var line in File.ReadLines(path))
+        {
+            var t = line.Trim();
+            if (t.Length == 0 || t[0] is '[' or '#' or ';') continue;
+            int i = t.IndexOf('=');
+            if (i <= 0) continue;
+            v.TryAdd(t[..i].Trim(), t[(i + 1)..]);
+        }
+        return v;
     }
 }

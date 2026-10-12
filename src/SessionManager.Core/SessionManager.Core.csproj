@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Everything that doesn't depend on a UI toolkit: the session tree, file formats, imports, OCR text parsing,
+       the SSH connection logic and password storage. Used by the Windows (WPF) and the Linux (Avalonia) app. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>SessionManager</RootNamespace>
+    <AssemblyName>SessionManager.Core</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SSH.NET" Version="2026.0.0" />
+  </ItemGroup>
+
+</Project>

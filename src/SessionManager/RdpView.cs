@@ -132,7 +132,7 @@ public sealed class RdpView : Grid, ISessionView
             ShowOverlay($"Connecting to jump host {_request.Jump.Settings.Host}…", showButton: false);
             try
             {
-                var ui = new SshUi { AskPassword = _askPassword, Anchor = this, Log = (text, kind) => { if (kind != LogKind.Info) _overlayText.Text = text; } };
+                var ui = SshUiWpf.Create(this, _askPassword, (text, kind) => { if (kind != LogKind.Info) _overlayText.Text = text; });
                 _route = await SshConnector.OpenRouteAsync(s, _request.Jump, ui);
                 server = _route.Host;
                 port = _route.Port;
