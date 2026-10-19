@@ -266,6 +266,7 @@ public static class ConnectionImport
             Protocol protocol;
             if (proto == "RDP") protocol = Protocol.Rdp;
             else if (proto is "SSH1" or "SSH2") protocol = Protocol.Ssh;
+            else if (proto == "VNC") protocol = Protocol.Vnc;
             else continue;
             var host = ((string?)node.Attribute("Hostname") ?? "").Trim();
             if (host.Length == 0) continue;
@@ -276,7 +277,7 @@ public static class ConnectionImport
             {
                 Name = (string?)node.Attribute("Name") ?? host, Protocol = protocol, Host = host,
                 Port = int.TryParse((string?)node.Attribute("Port"), out var p) && p is > 0 and < 65536 ? p : DefaultPort(protocol),
-                Username = ((string?)node.Attribute("Username") ?? "").Trim(),
+                Username = protocol == Protocol.Vnc ? "" : ((string?)node.Attribute("Username") ?? "").Trim(),
                 Domain = protocol == Protocol.Rdp ? ((string?)node.Attribute("Domain") ?? "").Trim() : "",
                 Folder = folder,
             });
@@ -316,6 +317,7 @@ public static class ConnectionImport
             Protocol protocol;
             if (f[0] == "0") protocol = Protocol.Ssh;
             else if (f[0] == "4") protocol = Protocol.Rdp;
+            else if (f[0] == "5") protocol = Protocol.Vnc;
             else continue;
             var host = f[1].Trim();
             if (host.Length == 0) continue;
@@ -326,7 +328,7 @@ public static class ConnectionImport
             {
                 Name = key, Protocol = protocol, Host = host,
                 Port = int.TryParse(f[2], out var p) && p is > 0 and < 65536 ? p : DefaultPort(protocol),
-                Username = user, Domain = domain, Folder = folder,
+                Username = protocol == Protocol.Vnc ? "" : user, Domain = domain, Folder = folder,
             });
         }
         return list;
@@ -366,11 +368,13 @@ public static class ConnectionImport
             var (scheme, host, port, urlUser) = parsed.Value;
 
             var protoText = Get(cProto).ToLowerInvariant();
+            int givenPort = port ?? (int.TryParse(Get(cPort), out var pp) ? pp : 0);
             Protocol protocol =
                 protoText.Contains("rdp") || protoText.Contains("remote desktop") || scheme == "rdp" ? Protocol.Rdp :
+                protoText.Contains("vnc") || scheme == "vnc" ? Protocol.Vnc :
                 protoText.Contains("ssh") || scheme is "ssh" or "sftp" ? Protocol.Ssh :
-                (port ?? (int.TryParse(Get(cPort), out var pp) ? pp : 0)) == 3389 ? Protocol.Rdp : Protocol.Ssh;
-            if (protoText.Length > 0 && !protoText.Contains("rdp") && !protoText.Contains("ssh") && !protoText.Contains("remote desktop")) continue;
+                givenPort == 3389 ? Protocol.Rdp : givenPort is >= 5900 and <= 5999 ? Protocol.Vnc : Protocol.Ssh;
+            if (protoText.Length > 0 && !protoText.Contains("rdp") && !protoText.Contains("ssh") && !protoText.Contains("vnc") && !protoText.Contains("remote desktop")) continue;
             if (scheme is "http" or "https" or "ftp") continue; // web logins from a password manager export
 
             int finalPort = int.TryParse(Get(cPort), out var p2) && p2 is > 0 and < 65536 ? p2 : port ?? DefaultPort(protocol);
@@ -382,7 +386,7 @@ public static class ConnectionImport
             list.Add(new ImportedConnection
             {
                 Name = Get(cName) is { Length: > 0 } n ? n : host, Protocol = protocol, Host = host, Port = finalPort,
-                Username = user, Domain = protocol == Protocol.Rdp ? domain : "",
+                Username = protocol == Protocol.Vnc ? "" : user, Domain = protocol == Protocol.Rdp ? domain : "",
                 Password = pass.Length > 0 ? pass : null,
                 Folder = Get(cFolder).Replace('\\', '/').Trim('/'),
             });
@@ -456,7 +460,23 @@ public static class ConnectionImport
         return (scheme, host, port, user);
     }
 
-    public static int DefaultPort(Protocol p) => p == Protocol.Ssh ? 22 : 3389;
+    public static int DefaultPort(Protocol p) => SessionSettings.DefaultPort(p);
+
+    /// <summary>
+    /// A VNC address: "host::5901" (port), "host:1" (display number, = port 5901), "host:5901", or anything
+    /// <see cref="ParseAddress"/> reads.
+    /// </summary>
+    public static (string Host, int Port)? ParseVncAddress(string text)
+    {
+        text = text.Trim();
+        int dbl = text.IndexOf("::", StringComparison.Ordinal);
+        if (dbl > 0 && !text.StartsWith('[') && text.Count(c => c == ':') == 2)
+            return int.TryParse(text[(dbl + 2)..], out var raw) && raw is > 0 and < 65536 && ParseAddress(text[..dbl]) is { } h
+                ? (h.Host, raw) : null;
+        if (ParseAddress(text) is not { } a) return null;
+        int port = a.Port is int p ? (p < 100 ? VncClient.DefaultPort + p : p) : VncClient.DefaultPort;
+        return (a.Host, port);
+    }
 
     /// <summary>Picks the reader for a file by its extension or contents.</summary>
     public static (List<ImportedConnection> Items, string Source) FromFile(string path)
@@ -464,6 +484,7 @@ public static class ConnectionImport
         var ext = Path.GetExtension(path).ToLowerInvariant();
         if (ext == ".csv" || ext == ".tsv") return (FromCsv(path), "CSV");
         if (ext == ".remmina") return (FromRemminaFiles([path]), "Remmina");
+        if (ext == ".vnc") return (FromVncFile(path), "VNC viewer file");
         if (ext == ".mxtsessions" || Path.GetFileName(path).Equals("MobaXterm.ini", StringComparison.OrdinalIgnoreCase)) return (FromMobaXterm(path), "MobaXterm");
         if (ext == ".xml") return (FromMRemoteNG(path), "mRemoteNG");
 
@@ -471,6 +492,7 @@ public static class ConnectionImport
         if (head.TrimStart().StartsWith('<')) return (FromMRemoteNG(path), "mRemoteNG");
         if (head.Contains("[Bookmarks", StringComparison.OrdinalIgnoreCase)) return (FromMobaXterm(path), "MobaXterm");
         if (head.Contains("[remmina]", StringComparison.OrdinalIgnoreCase)) return (FromRemminaFiles([path]), "Remmina");
+        if (head.Contains("[connection]", StringComparison.OrdinalIgnoreCase)) return (FromVncFile(path), "VNC viewer file");
         if (Regex.IsMatch(head, @"^\s*Host\s+\S", RegexOptions.Multiline | RegexOptions.IgnoreCase)) return (FromSshConfig(path), "SSH config");
         return (FromCsv(path), "CSV");
     }
@@ -534,14 +556,25 @@ public static class ConnectionImport
             Protocol protocol;
             if (proto == "RDP") protocol = Protocol.Rdp;
             else if (proto is "SSH" or "SFTP") protocol = Protocol.Ssh;
-            else continue; // VNC, SPICE, X2Go...: nothing this app can open
-            if (ParseAddress(v.GetValueOrDefault("server", "").Trim()) is not { } a) continue;
+            else if (proto == "VNC") protocol = Protocol.Vnc;
+            else continue; // incoming VNC, SPICE, X2Go...: nothing this app can open
+            var server = v.GetValueOrDefault("server", "").Trim();
+            if (ParseAddress(server) is not { } a) continue;
+            if (protocol == Protocol.Vnc && ParseVncAddress(server) is { } va) a = a with { Port = va.Port };
             var user = v.GetValueOrDefault("username", "").Trim();
             if (user.Length == 0) user = a.User;
             var domain = v.GetValueOrDefault("domain", "").Trim();
             if (protocol == Protocol.Rdp && domain.Length == 0) (domain, user) = DomainName.Split(user);
+            if (protocol == Protocol.Vnc) { user = ""; domain = ""; }
 
             SessionSettings? template = null;
+            if (protocol == Protocol.Vnc)
+            {
+                template = SessionSettings.DefaultsFor(Protocol.Vnc);
+                template.ViewOnly = v.GetValueOrDefault("viewonly") == "1";
+                template.RedirectClipboard = v.GetValueOrDefault("disableclipboard") != "1";
+                if (v.TryGetValue("scale", out var scale)) template.SmartSizing = scale != "0";
+            }
             if (protocol == Protocol.Rdp)
             {
                 template = SessionSettings.DefaultsFor(Protocol.Rdp);
@@ -566,6 +599,39 @@ public static class ConnectionImport
             });
         }
         return list;
+    }
+
+    // ───────────── VNC viewer files (.vnc) ─────────────
+
+    /// <summary>
+    /// Reads a saved VNC viewer connection: UltraVNC and TightVNC ("[connection] host= port="), and RealVNC ("Host=host:port").
+    /// The password stored in the file is not read.
+    /// </summary>
+    public static List<ImportedConnection> FromVncFile(string path)
+    {
+        var v = ReadKeyValues(path);
+        var host = v.GetValueOrDefault("host", "").Trim();
+        if (host.Length == 0) return [];
+        (string Host, int Port)? address =
+            v.TryGetValue("port", out var portText) && int.TryParse(portText, out var port) && port is > 0 and < 65536
+            && ParseAddress(host) is { Port: null } plain
+                ? (plain.Host, port)
+                : ParseVncAddress(host);
+        if (address is not { } a) return [];
+        var template = SessionSettings.DefaultsFor(Protocol.Vnc);
+        template.ViewOnly = v.GetValueOrDefault("viewonly", "0").Trim() is "1" or "true" or "True";
+        if (v.TryGetValue("autoscaling", out var auto)) template.SmartSizing = auto.Trim() == "1";
+        else if (v.TryGetValue("scale", out var scale)) template.SmartSizing = scale.Trim().Equals("auto", StringComparison.OrdinalIgnoreCase);
+        else if (v.TryGetValue("Scaling", out var realScale)) template.SmartSizing = !realScale.Trim().Equals("None", StringComparison.OrdinalIgnoreCase);
+        var name = Path.GetFileNameWithoutExtension(path);
+        return
+        [
+            new ImportedConnection
+            {
+                Name = name.Length > 0 ? name : a.Host, Protocol = Protocol.Vnc, Host = a.Host, Port = a.Port,
+                Template = template, SourcePath = path,
+            },
+        ];
     }
 
     /// <summary>key=value lines; [sections] and comments are ignored, the first value of a key wins.</summary>

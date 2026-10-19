@@ -88,7 +88,8 @@ static class ImportTests
             </mrng:Connections>
             """);
         l = ConnectionImport.FromMRemoteNG(xml);
-        Check("mRemoteNG: folders, protocols, no passwords", l.Count == 2 && l[0] is { Name: "app1", Folder: "Prod/Linux", Username: "ops", Password: null } && l[1] is { Protocol: Protocol.Rdp, Domain: "CORP", Folder: "Prod" }, Dump(l));
+        Check("mRemoteNG: folders, protocols, no passwords", l.Count == 3 && l[0] is { Name: "app1", Folder: "Prod/Linux", Username: "ops", Password: null } && l[1] is { Protocol: Protocol.Rdp, Domain: "CORP", Folder: "Prod" }
+            && l[2] is { Protocol: Protocol.Vnc, Host: "v", Port: 5900, Username: "" }, Dump(l));
 
         // ── MobaXterm ──
         var moba = Path.Combine(dir, "x.mxtsessions");

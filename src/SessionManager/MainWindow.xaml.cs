@@ -320,6 +320,7 @@ public partial class MainWindow : Window
             terminal.Typed += OnTerminalTyped;
             view = terminal;
         }
+        else if (node.Protocol == Protocol.Vnc) view = new VncView(request, AskPassword);
         else view = new RdpView(request, AskPassword);
 
         var tab = new OpenTab(node, request, view);
@@ -426,13 +427,27 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>Parses "user@host:port" (SSH) or "rdp://user@host:port" and opens a tab without saving a session.</summary>
+    /// <summary>Parses "user@host:port" (SSH), "rdp://user@host:port" or "vnc://host:display" and opens a tab without saving a session.</summary>
     private bool QuickConnect(string input)
     {
         var text = input.Trim();
         if (text.Length == 0) return false;
         var protocol = Protocol.Ssh;
         if (text.StartsWith("rdp://", StringComparison.OrdinalIgnoreCase)) { protocol = Protocol.Rdp; text = text[6..]; }
+        else if (text.StartsWith("vnc://", StringComparison.OrdinalIgnoreCase))
+        {
+            // host, host:display, host::port or host:port
+            if (ConnectionImport.ParseVncAddress(text[6..].TrimEnd('/')) is not { } vnc)
+            {
+                Info($"\"{text}\" is not a valid VNC address.");
+                return false;
+            }
+            var vs = _store.PresetFor(Protocol.Vnc);
+            vs.Host = vnc.Host;
+            vs.Port = vnc.Port;
+            OpenSession(new Node { Kind = NodeKind.Session, Protocol = Protocol.Vnc, Name = vnc.Host, Settings = vs });
+            return true;
+        }
         else if (text.StartsWith("ssh://", StringComparison.OrdinalIgnoreCase)) text = text[6..];
         text = text.TrimEnd('/');
 
@@ -465,7 +480,7 @@ public partial class MainWindow : Window
         }
         if (host.Length == 0)
         {
-            Info("Type a host to connect to, for example admin@10.0.0.5 or rdp://server01.");
+            Info("Type a host to connect to, for example admin@10.0.0.5, rdp://server01 or vnc://10.0.0.7.");
             return false;
         }
         settings.Host = host;
@@ -757,9 +772,11 @@ public partial class MainWindow : Window
         {
             menu.Items.Add(Item("New SSH session", "", () => NewSession(Protocol.Ssh), color: "SshBrush"));
             menu.Items.Add(Item("New RDP session", "", () => NewSession(Protocol.Rdp), color: "RdpBrush"));
+            menu.Items.Add(Item("New VNC session", "", () => NewSession(Protocol.Vnc), color: "VncBrush"));
             menu.Items.Add(new Separator());
             menu.Items.Add(Item("New SSH folder", "", () => NewFolder(_store.SshRoot), color: "FolderBrush"));
             menu.Items.Add(Item("New RDP folder", "", () => NewFolder(_store.RdpRoot), color: "FolderBrush"));
+            menu.Items.Add(Item("New VNC folder", "", () => NewFolder(_store.VncRoot), color: "FolderBrush"));
             menu.Items.Add(new Separator());
             menu.Items.Add(Item("Import session from file...", "", () => Import(null)));
             menu.Items.Add(Item("Import session list...", "", ImportListPicked, color: "SshBrush"));
@@ -772,7 +789,7 @@ public partial class MainWindow : Window
             var execute = Item("Execute", "", () => OpenSession(node), gesture: "Enter", color: "SshBrush");
             execute.FontWeight = FontWeights.SemiBold;
             menu.Items.Add(execute);
-            menu.Items.Add(Item("Connect as...", "", () => ConnectAs(node)));
+            if (node.Protocol != Protocol.Vnc) menu.Items.Add(Item("Connect as...", "", () => ConnectAs(node)));
             menu.Items.Add(Item("Ping host", "", () => new PingWindow(this, node.Settings!.Host, node.Settings.Port).Show(), color: "RdpBrush"));
             menu.Items.Add(new Separator());
             menu.Items.Add(Item("Rename session", "", () => Rename(node), gesture: "F2"));
@@ -791,9 +808,9 @@ public partial class MainWindow : Window
         }
         else
         {
-            var kind = node.Protocol == Protocol.Ssh ? "SSH" : "RDP";
+            var kind = node.Protocol switch { Protocol.Ssh => "SSH", Protocol.Vnc => "VNC", _ => "RDP" };
             menu.Items.Add(Item($"New {kind} session", node.Protocol == Protocol.Ssh ? "" : "", () => NewSession(node.Protocol),
-                color: node.Protocol == Protocol.Ssh ? "SshBrush" : "RdpBrush"));
+                color: node.Protocol switch { Protocol.Ssh => "SshBrush", Protocol.Vnc => "VncBrush", _ => "RdpBrush" }));
             menu.Items.Add(Item("New folder", "", () => NewFolder(node), color: "FolderBrush"));
             menu.Items.Add(Item("Import session from file...", "", () => Import(node)));
             menu.Items.Add(Item(node.IsRoot ? $"Export all {kind} sessions..." : "Export folder...", "", () => ExportList(node), color: "RdpBrush"));
@@ -848,6 +865,7 @@ public partial class MainWindow : Window
 
     private void NewSsh_Click(object sender, RoutedEventArgs e) => NewSession(Protocol.Ssh);
     private void NewRdp_Click(object sender, RoutedEventArgs e) => NewSession(Protocol.Rdp);
+    private void NewVnc_Click(object sender, RoutedEventArgs e) => NewSession(Protocol.Vnc);
 
     private void NewFolder_Click(object sender, RoutedEventArgs e)
     {
@@ -905,7 +923,7 @@ public partial class MainWindow : Window
         menu.Items.Add(Item("Import Remote Desktop history (mstsc)", "\uE7F4", () => Review(ConnectionImport.FromMstscHistory, "Remote Desktop"),
             enabled: ConnectionImport.HasMstscHistory()));
         menu.Items.Add(Item("Find .rdp files on this PC…", "\uE721", FindRdpFiles));
-        menu.Items.Add(Item("Import from mRemoteNG, MobaXterm or CSV…", "\uE8E5", ImportConnectionFile));
+        menu.Items.Add(Item("Import from mRemoteNG, MobaXterm, VNC viewer (.vnc) or CSV…", "\uE8E5", ImportConnectionFile));
         menu.Items.Add(new Separator());
         menu.Items.Add(Item("Scan picture or PDF for connections…", "\uE8B3", ScanFilePicked, color: "AccentBrush"));
         menu.Items.Add(Item("Scan screenshot from clipboard", "\uE77F", ScanClipboard, gesture: "Ctrl+Shift+V", color: "AccentBrush",
@@ -920,8 +938,9 @@ public partial class MainWindow : Window
         var dlg = new OpenFileDialog
         {
             Title = "Import connections",
-            Filter = "Connection lists (*.xml;*.mxtsessions;*.ini;*.csv;*.tsv;config)|*.xml;*.mxtsessions;*.ini;*.csv;*.tsv;config|" +
+            Filter = "Connection lists (*.xml;*.mxtsessions;*.ini;*.csv;*.tsv;*.vnc;config)|*.xml;*.mxtsessions;*.ini;*.csv;*.tsv;*.vnc;config|" +
                      "mRemoteNG (confCons.xml)|*.xml|MobaXterm sessions (*.mxtsessions)|*.mxtsessions;MobaXterm.ini|" +
+                     "UltraVNC, TightVNC or RealVNC connection (*.vnc)|*.vnc|" +
                      "CSV - KeePass, Bitwarden, spreadsheet (*.csv)|*.csv;*.tsv|All files (*.*)|*.*",
         };
         if (dlg.ShowDialog(this) != true) return;
@@ -1115,7 +1134,7 @@ public partial class MainWindow : Window
     private void NewSession(Protocol protocol)
     {
         var folder = TargetFolder(protocol);
-        var kind = protocol == Protocol.Ssh ? "SSH" : "Remote Desktop";
+        var kind = protocol.DisplayName();
         var dlg = new SessionDialog(this, protocol, $"New {kind} session", "", _store.PresetFor(protocol), hasSavedPassword: false,
             _store.Data.Credentials, JumpHostChoices(null));
         if (dlg.ShowDialog() != true) return;
@@ -1534,7 +1553,7 @@ public partial class MainWindow : Window
         preset.Host = "";
         _store.Data.Presets[node.Protocol] = preset;
         Save();
-        var kind = node.Protocol == Protocol.Ssh ? "SSH" : "RDP";
+        var kind = node.Protocol switch { Protocol.Ssh => "SSH", Protocol.Vnc => "VNC", _ => "RDP" };
         Info($"New {kind} sessions will start with the settings of \"{node.Name}\" (everything except the host).");
     }
 

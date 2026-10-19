@@ -90,7 +90,7 @@ public static class ScreenshotScan
 
     private static readonly Regex Ipv4 = new(@"(?<![\d.])((?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3})(?::(\d{1,5}))?(?![\d.]*\d)", RegexOptions.Compiled);
     private static readonly Regex UserAtHost = new(@"(?<![\w.-])([A-Za-z0-9._\\-]{1,64})@((?:[A-Za-z0-9-]+\.)*[A-Za-z0-9-]+|\d{1,3}(?:\.\d{1,3}){3})(?::(\d{1,5}))?", RegexOptions.Compiled);
-    private static readonly Regex Url = new(@"\b(rdp|ssh|sftp)://([^\s,;]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex Url = new(@"\b(rdp|ssh|sftp|vnc)://([^\s,;]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     // Host names with at least one dot and a letter-only last part (srv01.corp.local, db.example.com).
     private static readonly Regex Fqdn = new(@"(?<![\w@.-])((?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,24})(?::(\d{1,5}))?(?![\w-])", RegexOptions.Compiled);
     private static readonly Regex HostLabel = new(@"\b(?:host(?:\s*name)?|server|address|ip(?:\s*address)?|computer|machine|target)\s*[:=]\s*(\S+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -100,6 +100,7 @@ public static class ScreenshotScan
     private static readonly Regex DomainLabel = new(@"\bdomain\s*[:=]\s*([A-Za-z0-9._-]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex AnyLabel = new(@"^\s*[A-Za-zÀ-ÿ ]{2,20}\s*[:=]", RegexOptions.Compiled);
     private static readonly Regex RdpWords = new(@"\b(rdp|mstsc|remote\s*desktop|3389|windows(\s*server)?|terminal\s*server|win\d{2}|server\s*20\d\d)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex VncWords = new(@"\b(vnc|ultra\s*vnc|tight\s*vnc|tiger\s*vnc|real\s*vnc|x11vnc|59\d\d)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex SshWords = new(@"\b(ssh|sftp|putty|linux|ubuntu|debian|centos|rhel|rocky|alma|bash|esxi|router|switch|firewall)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     // Column headers of a server table.
@@ -169,7 +170,7 @@ public static class ScreenshotScan
             var l = lines[i];
             foreach (Match m in Url.Matches(l))
                 if (ConnectionImport.ParseAddress(m.Value) is { } a)
-                    Add(i, a.Host, a.Port, a.User, m.Groups[1].Value.Equals("rdp", StringComparison.OrdinalIgnoreCase) ? Protocol.Rdp : Protocol.Ssh);
+                    Add(i, a.Host, a.Port, a.User, m.Groups[1].Value.ToLowerInvariant() switch { "rdp" => Protocol.Rdp, "vnc" => Protocol.Vnc, _ => Protocol.Ssh });
             foreach (Match m in UserAtHost.Matches(l))
             {
                 // "name@company.com" with no SSH hint is an e-mail address, not a login.
@@ -257,7 +258,7 @@ public static class ScreenshotScan
                 foreach (var t in after.ToList())
                 {
                     if (Regex.IsMatch(t, @"^:?\d{1,5}$") && int.TryParse(t.TrimStart(':'), out var p) && p is > 0 and < 65536) { if (c.Port == 0) c.Port = p; after.Remove(t); }
-                    else if (Regex.IsMatch(t, @"^(rdp|ssh|sftp|windows|linux)$", RegexOptions.IgnoreCase)) { SetProto(hit, t); after.Remove(t); }
+                    else if (Regex.IsMatch(t, @"^(rdp|ssh|sftp|vnc|windows|linux)$", RegexOptions.IgnoreCase)) { SetProto(hit, t); after.Remove(t); }
                 }
                 if (!hit.HasUser && after.Count >= 1) { Assign(hit, Role.User, after[0]); after.RemoveAt(0); }
                 if (!hit.HasPassword && after.Count >= 1 && hit.HasUser) { Assign(hit, Role.Password, after[0]); after.RemoveAt(0); }
@@ -274,14 +275,19 @@ public static class ScreenshotScan
             // Protocol and the rest
             if (!hit.ExplicitProto)
             {
-                bool rdp = RdpWords.IsMatch(own) || c.Port == 3389, ssh = SshWords.IsMatch(own) || c.Port == 22;
-                if (!rdp && !ssh)
+                bool rdp = RdpWords.IsMatch(own) || c.Port == 3389, ssh = SshWords.IsMatch(own) || c.Port == 22,
+                     vnc = VncWords.IsMatch(own) || c.Port is >= 5900 and <= 5999;
+                if (!rdp && !ssh && !vnc)
                 {
                     var block = string.Join("\n", Enumerable.Range(hit.Row, end - hit.Row).Select(x => lines[x]));
+                    // A heading right above the host ("Reception PC (UltraVNC)") counts too.
+                    if (hit.Row > 0 && !hostRows.Contains(hit.Row - 1) && !AnyLabel.IsMatch(lines[hit.Row - 1])) block = lines[hit.Row - 1] + "\n" + block;
                     rdp = RdpWords.IsMatch(block);
                     ssh = SshWords.IsMatch(block);
+                    vnc = VncWords.IsMatch(block);
                 }
-                c.Protocol = rdp && !ssh ? Protocol.Rdp : Protocol.Ssh;
+                // VNC is named explicitly ("VNC", "UltraVNC", port 5900); it wins over the OS words ("Windows", "Linux").
+                c.Protocol = vnc ? Protocol.Vnc : rdp && !ssh ? Protocol.Rdp : Protocol.Ssh;
             }
             if (c.Protocol == Protocol.Rdp)
             {
@@ -290,6 +296,7 @@ public static class ScreenshotScan
                     for (int k = hit.Row; k < end; k++)
                         if (DomainLabel.Match(lines[k]) is { Success: true } dm) { c.Domain = dm.Groups[1].Value; break; }
             }
+            if (c.Protocol == Protocol.Vnc) { c.Username = ""; c.Domain = ""; }
             if (c.Port == 0) c.Port = ConnectionImport.DefaultPort(c.Protocol);
             if (c.Name.Length == 0) c.Name = NameFor(c, own);
         }
@@ -341,6 +348,12 @@ public static class ScreenshotScan
     private static void SetProto(Hit hit, string text)
     {
         if (hit.ExplicitProto) return;
+        if (VncWords.IsMatch(text))
+        {
+            hit.C.Protocol = Protocol.Vnc;
+            hit.ExplicitProto = true;
+            return;
+        }
         bool rdp = RdpWords.IsMatch(text), ssh = SshWords.IsMatch(text);
         if (rdp == ssh) return;
         hit.C.Protocol = rdp ? Protocol.Rdp : Protocol.Ssh;

@@ -12,7 +12,7 @@
     <AssemblyName>SessionManager</AssemblyName>
     <RootNamespace>SessionManager</RootNamespace>
     <Product>Session Manager</Product>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <Company>Session Manager</Company>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
   </PropertyGroup>

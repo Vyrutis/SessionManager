@@ -7,7 +7,7 @@ using SessionManager.Terminal;
 
 namespace SessionManager;
 
-/// <summary>New / edit session: address, login (own or a shared credential profile), and SSH or RDP options.</summary>
+/// <summary>New / edit session: address, login (own or a shared credential profile), and SSH, RDP or VNC options.</summary>
 public sealed class SessionDialog
 {
     private readonly Protocol _protocol;
@@ -45,6 +45,10 @@ public sealed class SessionDialog
     private readonly CheckBox _printers = new() { Content = "Share printers" };
     private readonly CheckBox _smart = new() { Content = "Scale a fixed size to the window" };
 
+    // VNC
+    private readonly CheckBox _vncFit = new() { Content = "Scale the remote screen to the tab" };
+    private readonly CheckBox _viewOnly = new() { Content = "View only (don't send keyboard and mouse)" };
+
     private readonly SessionSettings _original;
     private Window? _window;
 
@@ -72,7 +76,7 @@ public sealed class SessionDialog
         _password.Watermark = hasSavedPassword ? "Saved — leave empty to keep it" : "Asked when connecting if empty";
         _forget.IsVisible = hasSavedPassword;
 
-        _profile.ItemsSource = new[] { "None — use the user name and password below" }.Concat(profiles.Select(p => $"{p.Name}  ({(p.Domain.Length > 0 ? p.Domain + "\\" : "")}{p.Username})")).ToList();
+        _profile.ItemsSource = new[] { protocol == Protocol.Vnc ? "None — use the password below" : "None — use the user name and password below" }.Concat(profiles.Select(p => $"{p.Name}  ({(p.Domain.Length > 0 ? p.Domain + "\\" : "")}{p.Username})")).ToList();
         int pi = s.CredentialId is Guid cid ? profiles.FindIndex(p => p.Id == cid) : -1;
         _profile.SelectedIndex = pi + 1;
         _profile.SelectionChanged += (_, _) => UpdateLogin();
@@ -103,6 +107,8 @@ public sealed class SessionDialog
         _drives.IsChecked = s.RedirectDrives;
         _printers.IsChecked = s.RedirectPrinters;
         _smart.IsChecked = s.SmartSizing;
+        _vncFit.IsChecked = s.SmartSizing;
+        _viewOnly.IsChecked = s.ViewOnly;
     }
 
     private static List<string> MonospaceFonts()
@@ -175,7 +181,7 @@ public sealed class SessionDialog
         var login = Section();
         Row(login, "Credentials", _profile);
         if (_protocol == Protocol.Rdp) Row(login, "Domain", _domain);
-        Row(login, "User name", _user);
+        if (_protocol != Protocol.Vnc) Row(login, "User name", _user); // VNC servers ask for a password only
         Row(login, "Password", _password);
         Row(login, "", new StackPanel { Children = { _savePassword, _forget } });
         root.Children.Add(login);
@@ -214,6 +220,13 @@ public sealed class SessionDialog
             });
             ssh.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
             root.Children.Add(ssh);
+        }
+        else if (_protocol == Protocol.Vnc)
+        {
+            root.Children.Add(new TextBlock { Text = "VNC", Classes = { "h" } });
+            var vnc = Section();
+            Row(vnc, "", new StackPanel { Children = { _vncFit, _viewOnly, _clipboard } });
+            root.Children.Add(vnc);
         }
         else
         {
@@ -261,7 +274,7 @@ public sealed class SessionDialog
         s.Port = (int)(_port.Value ?? ConnectionImport.DefaultPort(_protocol));
         var profile = SelectedProfile;
         s.CredentialId = profile?.Id;
-        s.Username = (profile?.Username ?? _user.Text ?? "").Trim();
+        s.Username = _protocol == Protocol.Vnc ? "" : (profile?.Username ?? _user.Text ?? "").Trim();
         s.Domain = _protocol == Protocol.Rdp ? DomainName.Clean(profile?.Domain ?? _domain.Text) : "";
         s.JumpHostId = _jump.SelectedIndex > 0 ? _jumpIds[_jump.SelectedIndex] : null;
 
@@ -282,6 +295,12 @@ public sealed class SessionDialog
                 }
             }
             s.Tunnels = tunnels;
+        }
+        else if (_protocol == Protocol.Vnc)
+        {
+            s.SmartSizing = _vncFit.IsChecked == true;
+            s.ViewOnly = _viewOnly.IsChecked == true;
+            s.RedirectClipboard = _clipboard.IsChecked == true;
         }
         else
         {

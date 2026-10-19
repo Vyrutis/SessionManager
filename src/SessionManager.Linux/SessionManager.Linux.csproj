@@ -10,7 +10,7 @@
     <AssemblyName>sessionmanager</AssemblyName>
     <RootNamespace>SessionManager</RootNamespace>
     <Product>Session Manager</Product>
-    <Version>1.2.0</Version>
+    <Version>1.3.0</Version>
     <Company>Session Manager</Company>
     <ApplicationIcon>..\SessionManager\Assets\app.ico</ApplicationIcon>
     <BuiltInComInteropSupport>false</BuiltInComInteropSupport>
@@ -18,6 +18,8 @@
     <!-- Avalonia 11.3 marks the classic clipboard / drag-and-drop API obsolete in favour of a new one; the classic one
          still works on every platform and is what the app uses. -->
     <NoWarn>$(NoWarn);CS0618</NoWarn>
+    <!-- The VNC view copies screen updates straight into the bitmap's memory. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>

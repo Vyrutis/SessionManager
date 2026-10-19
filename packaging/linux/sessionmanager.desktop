@@ -2,12 +2,12 @@
 Type=Application
 Name=Session Manager
 GenericName=SSH and Remote Desktop Manager
-Comment=SSH and Remote Desktop (RDP) connections in tabs, with SFTP and connection import
+Comment=SSH, Remote Desktop (RDP) and VNC connections in tabs, with SFTP and connection import
 Exec=sessionmanager %F
 Icon=sessionmanager
 Terminal=false
 Categories=Network;RemoteAccess;System;
-Keywords=ssh;rdp;remote;desktop;sftp;terminal;putty;remmina;freerdp;
+Keywords=ssh;rdp;vnc;remote;desktop;sftp;terminal;putty;remmina;freerdp;ultravnc;
 MimeType=application/x-sessionmanager-list;application/x-sessionmanager-session;
 StartupWMClass=sessionmanager
 StartupNotify=true

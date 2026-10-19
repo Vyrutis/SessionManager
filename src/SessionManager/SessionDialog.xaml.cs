@@ -48,12 +48,14 @@ public partial class SessionDialog : Window
         PasswordBox.PasswordChanged += (_, _) =>
             PasswordHint.Visibility = hasSavedPassword && PasswordBox.Password.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
 
-        bool ssh = protocol == Protocol.Ssh;
-        SshGroup.Visibility = ssh ? Visibility.Visible : Visibility.Collapsed;
-        RdpGroup.Visibility = ssh ? Visibility.Collapsed : Visibility.Visible;
+        SshGroup.Visibility = protocol == Protocol.Ssh ? Visibility.Visible : Visibility.Collapsed;
+        RdpGroup.Visibility = protocol == Protocol.Rdp ? Visibility.Visible : Visibility.Collapsed;
+        VncGroup.Visibility = protocol == Protocol.Vnc ? Visibility.Visible : Visibility.Collapsed;
+        // VNC servers ask for a password only.
+        UserLabel.Visibility = UserRow.Visibility = protocol == Protocol.Vnc ? Visibility.Collapsed : Visibility.Visible;
 
         // Credential profiles
-        CredentialBox.Items.Add(new ComboBoxItem { Content = "This session only (enter below)" });
+        CredentialBox.Items.Add(new ComboBoxItem { Content = protocol == Protocol.Vnc ? "This session only (enter the password below)" : "This session only (enter below)" });
         foreach (var p in profiles.OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase))
             CredentialBox.Items.Add(new ComboBoxItem { Content = $"{p.Name}  ({p.Username})", Tag = p });
         // SSH keeps the domain inside the username (DOMAIN\user); Remote Desktop stores it separately.
@@ -61,8 +63,8 @@ public partial class SessionDialog : Window
         CredentialBox.SelectedIndex = Math.Max(0, CredentialBox.Items.Cast<ComboBoxItem>()
             .ToList().FindIndex(i => i.Tag is CredentialProfile p && p.Id == settings.CredentialId));
 
-        // Jump host (SSH) / SSH gateway (RDP)
-        var jumpBox = protocol == Protocol.Ssh ? JumpBox : RdpJumpBox;
+        // Jump host (SSH) / SSH gateway (RDP, VNC)
+        var jumpBox = JumpBoxFor(protocol);
         jumpBox.Items.Add(new ComboBoxItem { Content = "None — connect directly" });
         foreach (var (id, label) in jumpHosts) jumpBox.Items.Add(new ComboBoxItem { Content = label, Tag = id });
         jumpBox.SelectedIndex = Math.Max(0, jumpBox.Items.Cast<ComboBoxItem>().ToList().FindIndex(i => i.Tag is Guid g && g == settings.JumpHostId));
@@ -94,6 +96,9 @@ public partial class SessionDialog : Window
         DrivesBox.IsChecked = settings.RedirectDrives;
         PrintersBox.IsChecked = settings.RedirectPrinters;
         SmartSizingBox.IsChecked = settings.SmartSizing;
+        VncFitBox.IsChecked = settings.SmartSizing;
+        ViewOnlyBox.IsChecked = settings.ViewOnly;
+        VncClipboardBox.IsChecked = settings.RedirectClipboard;
 
         CredentialBox_SelectionChanged(CredentialBox, null!);
         Loaded += (_, _) => (string.IsNullOrEmpty(HostBox.Text) ? HostBox : NameBox).Focus();
@@ -132,6 +137,8 @@ public partial class SessionDialog : Window
     }
 
     private static Guid? SelectedId(ComboBox box) => (box.SelectedItem as ComboBoxItem)?.Tag as Guid?;
+
+    private ComboBox JumpBoxFor(Protocol p) => p switch { Protocol.Ssh => JumpBox, Protocol.Vnc => VncJumpBox, _ => RdpJumpBox };
 
     private void BrowseKey_Click(object sender, RoutedEventArgs e)
     {
@@ -188,11 +195,11 @@ public partial class SessionDialog : Window
             // A domain typed into the username box ("CORP\admin") wins over the drop-down.
             var (domain, user) = SplitUser(UserBox.Text.Trim(), DomainBox.Domain);
             if (DomainPicker.Remember(domain)) DomainPicker.SavedChanged?.Invoke();
-            s.Username = _protocol == Protocol.Ssh ? DomainPicker.Combine(domain, user) : user;
-            s.Domain = _protocol == Protocol.Ssh ? "" : domain;
+            s.Username = _protocol switch { Protocol.Ssh => DomainPicker.Combine(domain, user), Protocol.Vnc => "", _ => user };
+            s.Domain = _protocol == Protocol.Rdp ? domain : "";
         }
         s.CredentialId = SelectedProfile?.Id;
-        s.JumpHostId = SelectedId(_protocol == Protocol.Ssh ? JumpBox : RdpJumpBox);
+        s.JumpHostId = SelectedId(JumpBoxFor(_protocol));
 
         if (_protocol == Protocol.Ssh)
         {
@@ -202,6 +209,12 @@ public partial class SessionDialog : Window
             s.FontFamily = font == TerminalSchemes.Fonts[0] ? "" : font;
             s.ColorScheme = SchemeBox.SelectedItem as string ?? TerminalSchemes.Auto;
             s.Tunnels = tunnels;
+        }
+        else if (_protocol == Protocol.Vnc)
+        {
+            s.SmartSizing = VncFitBox.IsChecked == true;
+            s.ViewOnly = ViewOnlyBox.IsChecked == true;
+            s.RedirectClipboard = VncClipboardBox.IsChecked == true;
         }
         else
         {

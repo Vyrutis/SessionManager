@@ -20,6 +20,7 @@ void Check(string name, bool ok, string detail = "")
 TerminalTests.Run(Check);
 ImportTests.Run(Check);
 FreeRdpTests.Run(Check);
+VncTests.Run(Check);
 
 // ── Windows rendered off-screen (Skia, no display needed) ──
 AppBuilder.Configure<App>()

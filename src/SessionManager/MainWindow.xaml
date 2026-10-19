@@ -229,7 +229,7 @@
                     <!-- Quick connect: user@host[:port], or rdp://host -->
                     <Grid x:Name="QuickPanel" DockPanel.Dock="Right" Width="270" Margin="8,0,2,0" VerticalAlignment="Center">
                         <TextBox x:Name="QuickBox" Padding="24,3,4,3" KeyDown="QuickBox_KeyDown" TextChanged="QuickBox_TextChanged"
-                                 ToolTip="Quick connect: user@host or user@host:port for SSH, rdp://host for Remote Desktop. Press Enter." />
+                                 ToolTip="Quick connect: user@host or user@host:port for SSH, rdp://host for Remote Desktop, vnc://host for VNC. Press Enter." />
                         <TextBlock FontFamily="{StaticResource Icons}" Text="&#xE71B;" Foreground="{DynamicResource SubTextBrush}" FontSize="12"
                                    VerticalAlignment="Center" Margin="8,0,0,0" IsHitTestVisible="False" />
                         <TextBlock x:Name="QuickHint" Text="Quick connect  user@host" Foreground="{DynamicResource SubTextBrush}" VerticalAlignment="Center"
@@ -246,6 +246,12 @@
                         <StackPanel Orientation="Horizontal">
                             <TextBlock FontFamily="{StaticResource Icons}" Text="&#xE7F4;" Foreground="{DynamicResource RdpBrush}" VerticalAlignment="Center" Margin="{DynamicResource ToolIconMargin}" />
                             <TextBlock Text="New RDP" Visibility="{DynamicResource ToolLabelVisibility}" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource ToolButton}" Click="NewVnc_Click" ToolTip="New VNC session">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock FontFamily="{StaticResource Icons}" Text="&#xE8AF;" Foreground="{DynamicResource VncBrush}" VerticalAlignment="Center" Margin="{DynamicResource ToolIconMargin}" />
+                            <TextBlock Text="New VNC" Visibility="{DynamicResource ToolLabelVisibility}" />
                         </StackPanel>
                     </Button>
                     <Button Style="{StaticResource ToolButton}" Click="NewFolder_Click" ToolTip="New folder in the selected group">
@@ -397,6 +403,13 @@
                                         </MultiDataTrigger.Conditions>
                                         <Setter TargetName="Icon" Property="Foreground" Value="{DynamicResource RdpBrush}" />
                                     </MultiDataTrigger>
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding IsSession}" Value="True" />
+                                            <Condition Binding="{Binding Protocol}" Value="{x:Static core:Protocol.Vnc}" />
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter TargetName="Icon" Property="Foreground" Value="{DynamicResource VncBrush}" />
+                                    </MultiDataTrigger>
                                     <DataTrigger Binding="{Binding IsFolder}" Value="True">
                                         <Setter TargetName="CountBadge" Property="Visibility" Value="Visible" />
                                     </DataTrigger>
@@ -497,10 +510,16 @@
                                         <TextBlock Text="New SSH session" />
                                     </StackPanel>
                                 </Button>
-                                <Button Click="NewRdp_Click" Padding="14,7">
+                                <Button Click="NewRdp_Click" Padding="14,7" Margin="0,0,10,0">
                                     <StackPanel Orientation="Horizontal">
                                         <TextBlock FontFamily="{StaticResource Icons}" Text="&#xE7F4;" Foreground="{DynamicResource RdpBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
                                         <TextBlock Text="New RDP session" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Click="NewVnc_Click" Padding="14,7">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock FontFamily="{StaticResource Icons}" Text="&#xE8AF;" Foreground="{DynamicResource VncBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                        <TextBlock Text="New VNC session" />
                                     </StackPanel>
                                 </Button>
                             </StackPanel>

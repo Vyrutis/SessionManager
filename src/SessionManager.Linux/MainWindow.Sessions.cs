@@ -113,6 +113,20 @@ public sealed partial class MainWindow
         if (text.Length == 0) return false;
         var protocol = Protocol.Ssh;
         if (text.StartsWith("rdp://", StringComparison.OrdinalIgnoreCase)) { protocol = Protocol.Rdp; text = text[6..]; }
+        else if (text.StartsWith("vnc://", StringComparison.OrdinalIgnoreCase))
+        {
+            // host, host:display, host::port or host:port
+            if (ConnectionImport.ParseVncAddress(text[6..].TrimEnd('/')) is not { } vnc)
+            {
+                _ = Info($"\"{text}\" is not a valid VNC address.");
+                return false;
+            }
+            var vs = _store.PresetFor(Protocol.Vnc);
+            vs.Host = vnc.Host;
+            vs.Port = vnc.Port;
+            OpenSession(new Node { Kind = NodeKind.Session, Protocol = Protocol.Vnc, Name = vnc.Host, Settings = vs });
+            return true;
+        }
         else if (text.StartsWith("ssh://", StringComparison.OrdinalIgnoreCase)) text = text[6..];
         text = text.TrimEnd('/');
 
@@ -145,7 +159,7 @@ public sealed partial class MainWindow
         }
         if (host.Length == 0)
         {
-            _ = Info("Type a host to connect to, for example admin@10.0.0.5 or rdp://server01.");
+            _ = Info("Type a host to connect to, for example admin@10.0.0.5, rdp://server01 or vnc://10.0.0.7.");
             return false;
         }
         settings.Host = host;
@@ -201,7 +215,7 @@ public sealed partial class MainWindow
         if (node.IsSession)
         {
             Item("Connect", () => OpenSession(node), "Enter");
-            Item("Connect as…", () => _ = ConnectAs(node));
+            if (node.Protocol != Protocol.Vnc) Item("Connect as…", () => _ = ConnectAs(node));
             Sep();
             Item("Edit…", () => _ = EditSession(node));
             Item("Rename…", () => _ = Rename(node), "F2");
@@ -219,6 +233,7 @@ public sealed partial class MainWindow
         {
             Item("New SSH session here…", () => { node.IsSelected = true; _ = NewSession(Protocol.Ssh); }, enabled: node.Protocol == Protocol.Ssh);
             Item("New Remote Desktop session here…", () => { node.IsSelected = true; _ = NewSession(Protocol.Rdp); }, enabled: node.Protocol == Protocol.Rdp);
+            Item("New VNC session here…", () => { node.IsSelected = true; _ = NewSession(Protocol.Vnc); }, enabled: node.Protocol == Protocol.Vnc);
             Item("New folder…", () => _ = NewFolder(node));
             Sep();
             Item("Expand all", () => SetExpanded(node, true));
@@ -254,7 +269,7 @@ public sealed partial class MainWindow
     private async Task NewSession(Protocol protocol)
     {
         var folder = TargetFolder(protocol);
-        var kind = protocol == Protocol.Ssh ? "SSH" : "Remote Desktop";
+        var kind = protocol.DisplayName();
         var dlg = new SessionDialog(protocol, "", _store.PresetFor(protocol), _store.Data.Credentials, JumpHostChoices(null), false, _store.Data.Domains);
         if (!await dlg.ShowFor(this, $"New {kind} session")) return;
 
@@ -437,7 +452,7 @@ public sealed partial class MainWindow
         preset.Tunnels = new();
         _store.Data.Presets[node.Protocol] = preset;
         Save();
-        _ = Info($"New {(node.Protocol == Protocol.Ssh ? "SSH" : "Remote Desktop")} sessions will start with these settings (port, display and terminal options).");
+        _ = Info($"New {node.Protocol.DisplayName()} sessions will start with these settings (port, display and terminal options).");
     }
 
     private async Task AddToMenu(Node node)

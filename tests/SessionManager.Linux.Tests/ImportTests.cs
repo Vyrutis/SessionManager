@@ -35,7 +35,9 @@ static class ImportTests
             File.WriteAllText(Path.Combine(dir, "c.remmina"), "[remmina]\nname=vnc box\nprotocol=VNC\nserver=10.0.0.9\n");
             var rem = ConnectionImport.FromRemminaFiles(Directory.GetFiles(dir, "*.remmina").OrderBy(f => f));
             var dc = rem.FirstOrDefault(r => r.Name == "Domain controller");
-            Check("Remmina: RDP and SSH found, VNC skipped", rem.Count == 2, rem.Count.ToString());
+            Check("Remmina: RDP, SSH and VNC found", rem.Count == 3, rem.Count.ToString());
+            var rv = rem.FirstOrDefault(r => r.Protocol == Protocol.Vnc);
+            Check("Remmina: VNC on the default port", rv is { Name: "vnc box", Host: "10.0.0.9", Port: 5900, Username: "" }, rv == null ? "missing" : $"{rv.Host}:{rv.Port}");
             Check("Remmina: RDP fields", dc is { Protocol: Protocol.Rdp, Host: "dc01.corp.local", Port: 3390, Username: "jsmith", Domain: "CORP", Folder: "Office/Servers" },
                 dc == null ? "" : $"{dc.Host}:{dc.Port} {dc.Domain}\\{dc.Username} [{dc.Folder}]");
             Check("Remmina: display options", dc?.Template is { Width: 1600, Height: 900, ColorDepth: 16, RedirectDrives: true });
@@ -77,6 +79,31 @@ static class ImportTests
             Check("TSV table → SSH row with login", w1 is { Username: "admin", Password: "Blue#Sky42" }, w1 == null ? "missing" : $"{w1.Username}/{w1.Password}");
             Check("TSV table → RDP row with domain", d1 is { Protocol: Protocol.Rdp, Domain: "CORP", Username: "jsmith", Password: "Winter2026" },
                 d1 == null ? "missing" : $"{d1.Protocol} {d1.Domain}\\{d1.Username}/{d1.Password}");
+
+            // ── VNC ──
+            Check("VNC address: display number", ConnectionImport.ParseVncAddress("pc01:1") == ("pc01", 5901));
+            Check("VNC address: double colon = port", ConnectionImport.ParseVncAddress("10.0.0.7::5999") == ("10.0.0.7", 5999));
+            Check("VNC address: port", ConnectionImport.ParseVncAddress("10.0.0.7:5902") == ("10.0.0.7", 5902));
+            Check("VNC address: none", ConnectionImport.ParseVncAddress("10.0.0.7") == ("10.0.0.7", 5900));
+            var ultra = Path.Combine(dir, "Reception PC.vnc");
+            File.WriteAllText(ultra, "[connection]\r\nhost=192.168.5.20\r\nport=5901\r\nproxyhost=\r\nproxyport=5900\r\npassword=a1b2c3d4e5f60718\r\n[options]\r\nviewonly=1\r\nautoScaling=1\r\n");
+            var (uv, uvSource) = ConnectionImport.FromFile(ultra);
+            Check("UltraVNC .vnc file", uvSource == "VNC viewer file" && uv.Count == 1 && uv[0] is { Protocol: Protocol.Vnc, Name: "Reception PC", Host: "192.168.5.20", Port: 5901, Password: null }
+                && uv[0].Template is { ViewOnly: true, SmartSizing: true }, uv.Count == 1 ? $"{uv[0].Host}:{uv[0].Port}" : uv.Count.ToString());
+            var real = Path.Combine(dir, "lab.vnc");
+            File.WriteAllText(real, "ConnMethod=tcp\nHost=lab-mac:2\nScaling=None\n");
+            var rv2 = ConnectionImport.FromVncFile(real);
+            Check("RealVNC .vnc file (display number)", rv2.Count == 1 && rv2[0] is { Host: "lab-mac", Port: 5902 } && rv2[0].Template?.SmartSizing == false);
+            var vcsv = Path.Combine(dir, "v.csv");
+            File.WriteAllText(vcsv, "Name,Host,Port,Protocol,Password\nkiosk,10.9.9.9,,UltraVNC,pw1\nscreen,10.9.9.8,5901,,pw2\n");
+            var vc = ConnectionImport.FromCsv(vcsv);
+            Check("CSV: VNC by protocol name and by port", vc.Count == 2 && vc.All(c => c.Protocol == Protocol.Vnc) && vc[0].Port == 5900 && vc[1].Port == 5901 && vc[0].Password == "pw1",
+                string.Join(" ", vc.Select(c => $"{c.Protocol}:{c.Port}")));
+            var scanned = ScreenshotScan.Extract("Reception PC (UltraVNC)\n10.1.2.3\nPassword: Kiosk#1\n\nWindows server\n10.1.2.4 RDP\nUser: admin\n");
+            var sv = scanned.FirstOrDefault(c => c.Host == "10.1.2.3");
+            Check("Scan: VNC machine with its password", sv is { Protocol: Protocol.Vnc, Port: 5900, Password: "Kiosk#1", Username: "" },
+                sv == null ? "missing" : $"{sv.Protocol}:{sv.Port} {sv.Password}");
+            Check("Scan: RDP next to it stays RDP", scanned.FirstOrDefault(c => c.Host == "10.1.2.4")?.Protocol == Protocol.Rdp);
         }
         finally
         {

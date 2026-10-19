@@ -28,7 +28,9 @@ public sealed class SessionStore
     public Node SshRoot => Data.Roots.First(r => r.Protocol == Protocol.Ssh);
     public Node RdpRoot => Data.Roots.First(r => r.Protocol == Protocol.Rdp);
 
-    public Node RootFor(Protocol p) => p == Protocol.Ssh ? SshRoot : RdpRoot;
+    public Node VncRoot => Data.Roots.First(r => r.Protocol == Protocol.Vnc);
+
+    public Node RootFor(Protocol p) => Data.Roots.First(r => r.Protocol == p);
 
     /// <summary>Returns a warning message if the existing file could not be read.</summary>
     public string? Load()
@@ -59,8 +61,9 @@ public sealed class SessionStore
 
         EnsureRoot(Protocol.Ssh, "SSH sessions");
         EnsureRoot(Protocol.Rdp, "RDP sessions");
+        EnsureRoot(Protocol.Vnc, "VNC sessions");
 
-        // Keep SSH first, RDP second.
+        // Keep SSH first, then RDP, then VNC.
         var ordered = Data.Roots.Where(r => r.IsRoot).OrderBy(r => r.Protocol).ToList();
         Data.Roots.Clear();
         foreach (var r in ordered) Data.Roots.Add(r);

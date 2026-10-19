@@ -46,6 +46,7 @@ public static class Theme
         ["AccentBrush"]        = ("#5A6472", "#5B8CFF"),
         ["SshBrush"]           = ("#2D7D46", "#4CC38A"),
         ["RdpBrush"]           = ("#0F6CBD", "#5B9BFF"),
+        ["VncBrush"]           = ("#7A4FC4", "#B08CFF"),
         ["FolderBrush"]        = ("#A07F00", "#E0B341"),
         ["DangerBrush"]        = ("#C42B1C", "#FF6B5E"),
         ["CloseHoverBrush"]    = ("#C42B1C", "#C42B1C"),

@@ -40,7 +40,7 @@ public sealed partial class MainWindow : Window
     private readonly ItemsControl _tabStrip = new();
     private readonly Grid _tabHost = new();
     private readonly Control _welcome;
-    private readonly TextBox _quick = new() { Watermark = "Quick connect: user@host:port or rdp://host", Width = 300, VerticalAlignment = VerticalAlignment.Center };
+    private readonly TextBox _quick = new() { Watermark = "Quick connect: user@host, rdp://host, vnc://host", Width = 300, VerticalAlignment = VerticalAlignment.Center };
     private readonly ToggleButton _filesToggle = new() { Content = "Files", Classes = { "tool" } };
     private readonly ToggleButton _multiExec = new() { Content = "Multi-exec", Classes = { "tool" } };
     private readonly Button _themeButton = new() { Classes = { "tool" }, FontSize = 15 };
@@ -99,6 +99,7 @@ public sealed partial class MainWindow : Window
         // Toolbar
         var newSsh = ToolButton("+ SSH", "New SSH session", () => _ = NewSession(Protocol.Ssh));
         var newRdp = ToolButton("+ RDP", "New Remote Desktop session", () => _ = NewSession(Protocol.Rdp));
+        var newVnc = ToolButton("+ VNC", "New VNC session", () => _ = NewSession(Protocol.Vnc));
         var newFolder = ToolButton("+ Folder", "New folder", () => _ = NewFolder(TargetFolder(SelectedNode?.Protocol ?? Protocol.Ssh)));
         var creds = ToolButton("Credentials", "Shared logins (credential profiles)", () => _ = ManageCredentials());
         var import = ToolButton("Import / Export ▾", "Import connections, scan a screenshot or PDF, export sessions", () => { });
@@ -118,7 +119,7 @@ public sealed partial class MainWindow : Window
         var settings = ToolButton("⚙", "Settings", () => _ = ShowSettings());
         settings.FontSize = 15;
 
-        var left = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, Children = { newSsh, newRdp, newFolder, Sep(), creds, import, Sep(), _quick, connect } };
+        var left = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, Children = { newSsh, newRdp, newVnc, newFolder, Sep(), creds, import, Sep(), _quick, connect } };
         var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, HorizontalAlignment = HorizontalAlignment.Right, Children = { _filesToggle, _multiExec, Sep(), _themeButton, settings } };
         var bar = new DockPanel { Margin = new Thickness(6, 4) };
         DockPanel.SetDock(right, Dock.Right);
@@ -181,8 +182,8 @@ public sealed partial class MainWindow : Window
         foreach (var line in new[]
                  {
                      "Double-click a session on the left to connect.",
-                     "Type user@host or rdp://host in Quick connect for a one-off connection.",
-                     "Import / Export reads Remmina, PuTTY, ~/.ssh/config, .rdp files, CSV exports, and scans screenshots or PDFs (Ctrl+Shift+V pastes a screenshot).",
+                     "Type user@host, rdp://host or vnc://host in Quick connect for a one-off connection.",
+                     "Import / Export reads Remmina, PuTTY, ~/.ssh/config, .rdp and .vnc files, CSV exports, and scans screenshots or PDFs (Ctrl+Shift+V pastes a screenshot).",
                  })
             panel.Children.Add(new TextBlock { Text = line, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, Classes = { "sub" } });
         return panel;
@@ -193,6 +194,7 @@ public sealed partial class MainWindow : Window
     private static readonly Geometry FolderIcon = Geometry.Parse("M2 5.5C2 4.7 2.7 4 3.5 4H9l2 2h9.5c.8 0 1.5.7 1.5 1.5v11c0 .8-.7 1.5-1.5 1.5h-17C2.7 20 2 19.3 2 18.5Z");
     private static readonly Geometry SshIcon = Geometry.Parse("M2 4H22V20H2Z M4 8V18H20V8Z M6 10L10 13L6 16V14.4L7.9 13L6 11.6Z M11 15.2H17V16.8H11Z");
     private static readonly Geometry RdpIcon = Geometry.Parse("M2 3H22V17H2Z M4 5V15H20V5Z M8 19H16V21H8Z M11 17H13V19H11Z");
+    private static readonly Geometry VncIcon = Geometry.Parse("M2 3H22V17H2Z M4 5V15H20V5Z M8 19H16V21H8Z M11 17H13V19H11Z M8 7L14 10L11.2 10.9L13 13.4L11.9 14.2L10.1 11.7L8 13.5Z");
 
     private void BuildTree()
     {
@@ -203,8 +205,9 @@ public sealed partial class MainWindow : Window
             var icon = new PathIcon
             {
                 Width = 15, Height = 15, Margin = new Thickness(0, 0, 7, 0),
-                Data = node.IsFolder && !node.IsRoot ? FolderIcon : node.Protocol == Protocol.Ssh ? SshIcon : RdpIcon,
-                Foreground = new SolidColorBrush(node.IsFolder && !node.IsRoot ? Color.Parse("#D9A33B") : node.Protocol == Protocol.Ssh ? Color.Parse("#2DA44E") : Color.Parse("#4F8DF5")),
+                Data = node.IsFolder && !node.IsRoot ? FolderIcon : node.Protocol switch { Protocol.Ssh => SshIcon, Protocol.Vnc => VncIcon, _ => RdpIcon },
+                Foreground = new SolidColorBrush(Color.Parse(node.IsFolder && !node.IsRoot ? "#D9A33B"
+                    : node.Protocol switch { Protocol.Ssh => "#2DA44E", Protocol.Vnc => "#9A6BE0", _ => "#4F8DF5" })),
             };
             var name = new TextBlock { VerticalAlignment = VerticalAlignment.Center, [!TextBlock.TextProperty] = new Binding(nameof(Node.Name)) };
             if (node.IsRoot) name.FontWeight = FontWeight.SemiBold;
@@ -418,6 +421,7 @@ public sealed partial class MainWindow : Window
             terminal.Typed += OnTerminalTyped;
             view = terminal;
         }
+        else if (node.Protocol == Protocol.Vnc) view = new VncTab(request, AskPassword, () => this);
         else view = new RdpTab(request, AskPassword, () => this, _settings);
 
         var tab = new OpenTab(node, request, view);

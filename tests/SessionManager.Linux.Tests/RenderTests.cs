@@ -76,7 +76,29 @@ static class RenderTests
         rdp.Start();
         Check("RDP tab renders (FreeRDP missing message)", Render(rdpWindow, "rdp"));
 
+        // VNC tab connected to a local test server showing a small desktop.
+        int vncPort = VncTests.StartPictureServer(640, 400, (x, y) =>
+        {
+            if (y >= 372) return x < 40 ? 0xFF2F6FDF : 0xFF1E2430;                                   // taskbar with a start button
+            if (x is >= 120 and < 460 && y is >= 70 and < 300)
+                return y < 96 ? 0xFF3B4A63 : (x - 120) % 40 < 30 && (y - 110) % 26 < 14 && y < 290 ? 0xFFDDE3EA : 0xFFF7F8FA; // window with "text"
+            return 0xFF000000 | (uint)(20 + y / 5) << 16 | (uint)(70 + y / 6) << 8 | (uint)(120 + x / 8);  // wallpaper gradient
+        });
+        var vncNode = new Node { Kind = NodeKind.Session, Protocol = Protocol.Vnc, Name = "Reception PC", Settings = new SessionSettings { Host = "127.0.0.1", Port = vncPort, SmartSizing = true } };
+        var vnc = new VncTab(new ConnectRequest { Session = vncNode, Settings = vncNode.Settings! }, (_, _) => Task.FromResult<(string Password, bool Save)?>(null), () => null);
+        var vncWindow = new Window { Width = 900, Height = 520, Content = vnc };
+        vncWindow.Show();
+        vnc.Start();
+        var until = DateTime.UtcNow.AddSeconds(10);
+        while (vnc.Status != TabStatus.Connected && DateTime.UtcNow < until) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(20); }
+        for (int i = 0; i < 20; i++) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(20); } // let the first picture arrive
+        Check("VNC tab connects to the test server", vnc.Status == TabStatus.Connected, vnc.Status.ToString());
+        Check("VNC tab renders", Render(vncWindow, "vnc"));
+        vnc.Dispose();
+
         UiTheme.Apply(false, new UiSettings());
+        var vncDlg = new SessionDialog(Protocol.Vnc, "Reception PC", SessionSettings.DefaultsFor(Protocol.Vnc), [], [], hasSavedPassword: false, []);
+        Check("VNC session dialog renders", Render(vncDlg.CreateWindow(null, "New VNC session"), "vnc-dialog"));
         var dlg = new SessionDialog(Protocol.Ssh, "web01", sshNode.Settings!, [new CredentialProfile { Name = "Ops", Username = "ops" }],
             [(Guid.NewGuid(), "bastion  (ops@bastion.example.com)")], hasSavedPassword: true, []);
         Check("session dialog renders", Render(dlg.CreateWindow(null, "Edit session — web01"), "session-dialog"));

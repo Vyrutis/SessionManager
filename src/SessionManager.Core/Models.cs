@@ -5,7 +5,7 @@ using System.Text.Json.Serialization;
 
 namespace SessionManager;
 
-public enum Protocol { Ssh, Rdp }
+public enum Protocol { Ssh, Rdp, Vnc }
 
 public enum NodeKind { Folder, Session }
 
@@ -38,7 +38,12 @@ public sealed class SessionSettings
     public bool RedirectClipboard { get; set; } = true;
     public bool RedirectDrives { get; set; }
     public bool RedirectPrinters { get; set; }
+    /// <summary>RDP: scale the remote desktop to the tab. VNC: scale to fit (off = actual size with scroll bars).</summary>
     public bool SmartSizing { get; set; }
+
+    // VNC
+    /// <summary>Watch only: keyboard and mouse are not sent.</summary>
+    public bool ViewOnly { get; set; }
 
     public SessionSettings Clone()
     {
@@ -47,7 +52,14 @@ public sealed class SessionSettings
         return c;
     }
 
-    public static SessionSettings DefaultsFor(Protocol p) => new() { Port = p == Protocol.Ssh ? 22 : 3389 };
+    public static SessionSettings DefaultsFor(Protocol p) => p switch
+    {
+        Protocol.Ssh => new() { Port = 22 },
+        Protocol.Vnc => new() { Port = 5900, SmartSizing = true },
+        _ => new() { Port = 3389 },
+    };
+
+    public static int DefaultPort(Protocol p) => p switch { Protocol.Ssh => 22, Protocol.Vnc => 5900, _ => 3389 };
 }
 
 /// <summary>A folder or a session in the tree.</summary>
@@ -110,8 +122,7 @@ public sealed class Node : INotifyPropertyChanged
             if (Settings == null) return "";
             var s = Settings;
             var user = string.IsNullOrEmpty(s.Username) ? "" : s.Username + "@";
-            var defaultPort = Protocol == Protocol.Ssh ? 22 : 3389;
-            var port = s.Port == defaultPort ? "" : ":" + s.Port;
+            var port = s.Port == SessionSettings.DefaultPort(Protocol) ? "" : ":" + s.Port;
             return $"{user}{s.Host}{port}";
         }
     }
@@ -203,4 +214,10 @@ public sealed class UiSettings
 
     private static double Clamp(double v, double min, double max, double fallback) =>
         double.IsFinite(v) ? Math.Clamp(v, min, max) : fallback;
+}
+
+public static class ProtocolExtensions
+{
+    /// <summary>"SSH", "Remote Desktop" or "VNC".</summary>
+    public static string DisplayName(this Protocol p) => p switch { Protocol.Ssh => "SSH", Protocol.Vnc => "VNC", _ => "Remote Desktop" };
 }

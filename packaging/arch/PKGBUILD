@@ -6,12 +6,13 @@
 # version is older). No SDK at hand? Use ../arch-bin with the prebuilt release tarball instead.
 
 pkgname=sessionmanager
-pkgver=1.2.0
+pkgver=1.3.0
 pkgrel=1
-pkgdesc="SSH and Remote Desktop session manager: tabs, SFTP, port forwarding, imports and screenshot/PDF scanning"
+pkgdesc="SSH, Remote Desktop and VNC session manager: tabs, SFTP, port forwarding, imports and screenshot/PDF scanning"
 arch=('x86_64')
 url="https://github.com/Vyrutis/SessionManager"
 license=('LicenseRef-custom')
+conflicts=('sessionmanager-bin')
 depends=('glibc' 'gcc-libs' 'zlib' 'icu' 'openssl' 'krb5'
          'fontconfig' 'freetype2' 'libx11' 'libxcursor' 'libxrandr' 'libxi' 'libice' 'libsm'
          'freerdp' 'libsecret' 'ttf-dejavu' 'hicolor-icon-theme')

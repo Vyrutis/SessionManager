@@ -138,7 +138,7 @@ public sealed class ImportReviewWindow
     {
         var m = new Thickness(2, 1);
         var check = new CheckBox { IsChecked = true, Margin = m };
-        var proto = new ComboBox { Margin = m, ItemsSource = new[] { "SSH", "RDP" }, SelectedIndex = c.Protocol == Protocol.Rdp ? 1 : 0, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var proto = new ComboBox { Margin = m, ItemsSource = new[] { "SSH", "RDP", "VNC" }, SelectedIndex = (int)c.Protocol, HorizontalAlignment = HorizontalAlignment.Stretch };
         var name = new TextBox { Text = c.Name, Margin = m };
         var host = new TextBox { Text = c.Host, Margin = m };
         var port = new TextBox { Text = c.Port > 0 ? c.Port.ToString() : "", Margin = m };
@@ -149,15 +149,19 @@ public sealed class ImportReviewWindow
         else if (c.Folder.Length > 0) ToolTip.SetTip(name, "Folder: " + c.Folder);
 
         var row = new Row { Check = check, Proto = proto, Name = name, Host = host, Port = port, Domain = domain, User = user, Password = pass, Source = c };
+        void UpdateFields()
+        {
+            var p = (Protocol)Math.Max(0, proto.SelectedIndex);
+            domain.IsEnabled = p == Protocol.Rdp;
+            user.IsEnabled = p != Protocol.Vnc; // VNC servers ask for a password only
+        }
         proto.SelectionChanged += (_, _) =>
         {
-            bool rdp = proto.SelectedIndex == 1;
-            domain.IsEnabled = rdp;
+            UpdateFields();
             // Swap the port along with the protocol, unless it was set to something custom.
-            if (rdp && port.Text is "22" or "" or null) port.Text = "3389";
-            else if (!rdp && port.Text is "3389" or "" or null) port.Text = "22";
+            if (port.Text is "22" or "3389" or "5900" or "" or null) port.Text = ConnectionImport.DefaultPort((Protocol)Math.Max(0, proto.SelectedIndex)).ToString();
         };
-        domain.IsEnabled = proto.SelectedIndex == 1;
+        UpdateFields();
         check.IsCheckedChanged += (_, _) => UpdateCount();
         string? autoName = c.Name == c.Host ? c.Host : null;
         host.TextChanged += (_, _) =>
@@ -185,7 +189,7 @@ public sealed class ImportReviewWindow
         Selected.Clear();
         foreach (var r in _rows.Where(r => r.Check.IsChecked == true))
         {
-            var protocol = r.Proto.SelectedIndex == 1 ? Protocol.Rdp : Protocol.Ssh;
+            var protocol = (Protocol)Math.Max(0, r.Proto.SelectedIndex);
             var parsed = ConnectionImport.ParseAddress(r.Host.Text ?? "");
             if (parsed == null)
             {
@@ -204,8 +208,8 @@ public sealed class ImportReviewWindow
                 r.Port.SelectAll();
                 return false;
             }
-            var user = (r.User.Text ?? "").Trim();
-            if (user.Length == 0) user = parsed.Value.User;
+            var user = protocol == Protocol.Vnc ? "" : (r.User.Text ?? "").Trim();
+            if (user.Length == 0 && protocol != Protocol.Vnc) user = parsed.Value.User;
             var domain = protocol == Protocol.Rdp ? DomainName.Clean(r.Domain.Text) : "";
             if (protocol == Protocol.Rdp && domain.Length == 0 && user.Contains('\\')) (domain, user) = DomainName.Split(user);
             var password = r.Password.Text ?? "";

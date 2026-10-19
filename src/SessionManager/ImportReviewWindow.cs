@@ -172,7 +172,7 @@ public sealed class ImportReviewWindow : Window
         g.Margin = new Thickness(0, 0, 0, 4);
         var m = new Thickness(3, 0, 3, 0);
         var check = new CheckBox { IsChecked = true, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
-        var proto = new ComboBox { Margin = m, ItemsSource = new[] { "SSH", "RDP" }, SelectedIndex = c.Protocol == Protocol.Rdp ? 1 : 0 };
+        var proto = new ComboBox { Margin = m, ItemsSource = new[] { "SSH", "RDP", "VNC" }, SelectedIndex = (int)c.Protocol };
         var name = new TextBox { Text = c.Name, Margin = m, VerticalContentAlignment = VerticalAlignment.Center };
         var host = new TextBox { Text = c.Host, Margin = m, VerticalContentAlignment = VerticalAlignment.Center };
         var port = new TextBox { Text = c.Port > 0 ? c.Port.ToString() : "", Margin = m, VerticalContentAlignment = VerticalAlignment.Center };
@@ -192,16 +192,20 @@ public sealed class ImportReviewWindow : Window
         if (c.SourcePath.Length > 0) name.ToolTip = c.SourcePath;
 
         var row = new Row { Check = check, Proto = proto, Name = name, Host = host, Port = port, Domain = domain, User = user, Password = pass, PasswordText = passText, Source = c };
+        void UpdateFields()
+        {
+            var p = (Protocol)Math.Max(0, proto.SelectedIndex);
+            domain.IsEnabled = p == Protocol.Rdp;
+            user.IsEnabled = p != Protocol.Vnc; // VNC servers ask for a password only
+        }
         void ProtoChanged()
         {
-            bool rdp = proto.SelectedIndex == 1;
-            domain.IsEnabled = rdp;
+            UpdateFields();
             // Swap the port along with the protocol, unless it was set to something custom.
-            if (rdp && (port.Text == "22" || port.Text == "")) port.Text = "3389";
-            else if (!rdp && (port.Text == "3389" || port.Text == "")) port.Text = "22";
+            if (port.Text is "22" or "3389" or "5900" or "") port.Text = ConnectionImport.DefaultPort((Protocol)Math.Max(0, proto.SelectedIndex)).ToString();
         }
         proto.SelectionChanged += (_, _) => ProtoChanged();
-        domain.IsEnabled = proto.SelectedIndex == 1;
+        UpdateFields();
         check.Checked += (_, _) => UpdateCount();
         check.Unchecked += (_, _) => UpdateCount();
         host.TextChanged += (_, _) => { if (name.Text.Length == 0 || name.Text == (string?)name.Tag) name.Text = (string)(name.Tag = host.Text.Trim()); };
@@ -237,7 +241,7 @@ public sealed class ImportReviewWindow : Window
         Selected.Clear();
         foreach (var r in _rows.Where(r => r.Check.IsChecked == true))
         {
-            var protocol = r.Proto.SelectedIndex == 1 ? Protocol.Rdp : Protocol.Ssh;
+            var protocol = (Protocol)Math.Max(0, r.Proto.SelectedIndex);
             var parsed = ConnectionImport.ParseAddress(r.Host.Text);
             if (parsed == null)
             {
@@ -255,8 +259,8 @@ public sealed class ImportReviewWindow : Window
                 r.Port.SelectAll();
                 return;
             }
-            var user = r.User.Text.Trim();
-            if (user.Length == 0) user = parsed.Value.User;
+            var user = protocol == Protocol.Vnc ? "" : r.User.Text.Trim(); // VNC servers ask for a password only
+            if (user.Length == 0 && protocol != Protocol.Vnc) user = parsed.Value.User;
             var domain = protocol == Protocol.Rdp ? DomainPicker.Clean(r.Domain.Text) : "";
             if (protocol == Protocol.Rdp && domain.Length == 0 && user.Contains('\\')) (domain, user) = DomainPicker.Split(user);
             Selected.Add(new ImportedConnection

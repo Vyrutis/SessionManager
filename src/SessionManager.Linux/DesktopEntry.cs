@@ -30,7 +30,7 @@ public static class DesktopEntry
         if (OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Menu entries are for Linux desktops.");
         Directory.CreateDirectory(Dir);
         var path = FileFor(node.Id);
-        var kind = node.Protocol == Protocol.Ssh ? "SSH" : "Remote Desktop";
+        var kind = node.Protocol.DisplayName();
         File.WriteAllText(path, $"""
             [Desktop Entry]
             Type=Application

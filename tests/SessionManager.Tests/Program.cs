@@ -9,6 +9,14 @@ void Check(string name, bool ok, string detail = "")
     if (ok) pass++; else fail++;
     Console.WriteLine($"{(ok ? "PASS" : "FAIL")}  {name}{(ok || detail == "" ? "" : "  -> " + detail)}");
 }
+
+// Child process for the WPF VNC tab test (see VncViewTests.RunIsolated).
+if (args.Contains("--vnc-wpf"))
+{
+    VncViewTests.Run(Check);
+    Console.Out.Flush();
+    Thread.Sleep(Timeout.Infinite); // ended by the parent
+}
 T? Throws<T>(Action a) where T : Exception
 {
     try { a(); return null; } catch (T e) { return e; } catch (Exception e) { Console.WriteLine("   unexpected " + e.GetType().Name + ": " + e.Message); return null; }
@@ -167,6 +175,7 @@ File.WriteAllText(part, """{"Format":"SessionManager.Session"}""");
 Check("single-session file is not taken as a list", Throws<InvalidDataException>(() => SessionList.Read(part)) != null);
 
 ImportTests.Run(Check, dir);
+VncViewTests.RunIsolated(Check);
 
 Directory.Delete(dir, true);
 Console.WriteLine($"\n{pass} passed, {fail} failed");

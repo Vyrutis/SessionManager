@@ -31,7 +31,7 @@ public sealed partial class MainWindow
         Item("Import from OpenSSH config (~/.ssh/config)", () => _ = Review(() => ConnectionImport.FromSshConfig(ConnectionImport.SshConfigPath), "SSH config"),
             enabled: () => File.Exists(ConnectionImport.SshConfigPath));
         Item("Find .rdp files in my folders…", () => _ = FindRdpFiles());
-        Item("Import from mRemoteNG, MobaXterm, Remmina or CSV file…", () => _ = ImportConnectionFile());
+        Item("Import from mRemoteNG, MobaXterm, Remmina, VNC viewer (.vnc) or CSV file…", () => _ = ImportConnectionFile());
         Sep();
         Item("Scan a picture or PDF…", () => _ = ScanFilePicked());
         Item("Scan a screenshot from the clipboard", () => _ = ScanClipboard(), "Ctrl+Shift+V");
@@ -357,7 +357,7 @@ public sealed partial class MainWindow
             Title = "Import connections",
             FileTypeFilter =
             [
-                Type("Connection lists", "*.xml", "*.mxtsessions", "*.ini", "*.csv", "*.tsv", "*.remmina", "config"),
+                Type("Connection lists", "*.xml", "*.mxtsessions", "*.ini", "*.csv", "*.tsv", "*.remmina", "*.vnc", "config"),
                 Type("All files", "*"),
             ],
         });
