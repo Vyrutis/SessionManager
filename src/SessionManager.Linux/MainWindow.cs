@@ -21,16 +21,7 @@ namespace SessionManager;
 /// <summary>The main window: session tree on the left, connection tabs on the right, toolbar on top.</summary>
 public sealed partial class MainWindow : Window
 {
-    private static WindowIcon? _icon;
-    public static WindowIcon? AppIcon
-    {
-        get
-        {
-            if (_icon != null) return _icon;
-            try { _icon = new WindowIcon(AssetLoader.Open(new Uri("avares://sessionmanager/Assets/app-256.png"))); } catch { }
-            return _icon;
-        }
-    }
+    public static WindowIcon? AppIcon => SessionManager.AppIcon.Current;
 
     private readonly SessionStore _store = new();
     private readonly LinuxSettings _settings = LinuxSettings.Load();
@@ -64,8 +55,10 @@ public sealed partial class MainWindow : Window
         bool firstRun = !File.Exists(Path.Combine(SessionStore.DataDir, "sessions.json"));
         var warning = _store.Load();
         if (firstRun) _store.Data.Theme = Application.Current?.ActualThemeVariant == ThemeVariant.Dark ? "Dark" : "Light";
+        if (_store.Data.ActiveTab == Protocol.Web) _store.Data.ActiveTab = Protocol.Ssh; // no Web tab in this app yet
         UiTheme.Apply(_store.Data.Theme == "Dark", _store.Data.Ui);
         UiTheme.Changed += UpdateThemeButton;
+        UiTheme.Changed += () => Icon = AppIcon;
 
         _sidebarColumn = new ColumnDefinition(new GridLength(Math.Clamp(_settings.SidebarWidth, 180, 700))) { MinWidth = 180 };
         _welcome = BuildWelcome();
@@ -100,7 +93,7 @@ public sealed partial class MainWindow : Window
         var newSsh = ToolButton("+ SSH", "New SSH session", () => _ = NewSession(Protocol.Ssh));
         var newRdp = ToolButton("+ RDP", "New Remote Desktop session", () => _ = NewSession(Protocol.Rdp));
         var newVnc = ToolButton("+ VNC", "New VNC session", () => _ = NewSession(Protocol.Vnc));
-        var newFolder = ToolButton("+ Folder", "New folder", () => _ = NewFolder(TargetFolder(SelectedNode?.Protocol ?? Protocol.Ssh)));
+        var newFolder = ToolButton("+ Folder", "New folder", () => _ = NewFolder(TargetFolder(SelectedNode?.Protocol ?? _store.Data.ActiveTab)));
         var creds = ToolButton("Credentials", "Shared logins (credential profiles)", () => _ = ManageCredentials());
         var import = ToolButton("Import / Export ▾", "Import connections, scan a screenshot or PDF, export sessions", () => { });
         import.Flyout = BuildImportMenu();
@@ -136,7 +129,10 @@ public sealed partial class MainWindow : Window
         DockPanel.SetDock(_filter, Dock.Top);
         _filter.TextChanged += (_, _) => ApplyFilter();
         sidebar.Children.Add(_filter);
-        sidebar.Children.Add(_tree);
+        var listTabs = BuildListTabs();
+        DockPanel.SetDock(listTabs, Dock.Top);
+        sidebar.Children.Add(listTabs);
+        sidebar.Children.Add(new Panel { Children = { _tree, _emptyHint } });
         body.Children.Add(new Border { Child = sidebar }.Res(Border.BackgroundProperty, "SmSidebar"));
         var splitter = new GridSplitter { Width = 4, ResizeDirection = GridResizeDirection.Columns }.Res(BackgroundProperty, "SmBorder");
         Grid.SetColumn(splitter, 1);
@@ -187,165 +183,6 @@ public sealed partial class MainWindow : Window
                  })
             panel.Children.Add(new TextBlock { Text = line, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, Classes = { "sub" } });
         return panel;
-    }
-
-    // ───────────── Tree ─────────────
-
-    private static readonly Geometry FolderIcon = Geometry.Parse("M2 5.5C2 4.7 2.7 4 3.5 4H9l2 2h9.5c.8 0 1.5.7 1.5 1.5v11c0 .8-.7 1.5-1.5 1.5h-17C2.7 20 2 19.3 2 18.5Z");
-    private static readonly Geometry SshIcon = Geometry.Parse("M2 4H22V20H2Z M4 8V18H20V8Z M6 10L10 13L6 16V14.4L7.9 13L6 11.6Z M11 15.2H17V16.8H11Z");
-    private static readonly Geometry RdpIcon = Geometry.Parse("M2 3H22V17H2Z M4 5V15H20V5Z M8 19H16V21H8Z M11 17H13V19H11Z");
-    private static readonly Geometry VncIcon = Geometry.Parse("M2 3H22V17H2Z M4 5V15H20V5Z M8 19H16V21H8Z M11 17H13V19H11Z M8 7L14 10L11.2 10.9L13 13.4L11.9 14.2L10.1 11.7L8 13.5Z");
-
-    private void BuildTree()
-    {
-        _tree.ItemsSource = _store.Data.Roots;
-        _tree.Background = Brushes.Transparent;
-        _tree.ItemTemplate = new FuncTreeDataTemplate<Node>((node, _) =>
-        {
-            var icon = new PathIcon
-            {
-                Width = 15, Height = 15, Margin = new Thickness(0, 0, 7, 0),
-                Data = node.IsFolder && !node.IsRoot ? FolderIcon : node.Protocol switch { Protocol.Ssh => SshIcon, Protocol.Vnc => VncIcon, _ => RdpIcon },
-                Foreground = new SolidColorBrush(Color.Parse(node.IsFolder && !node.IsRoot ? "#D9A33B"
-                    : node.Protocol switch { Protocol.Ssh => "#2DA44E", Protocol.Vnc => "#9A6BE0", _ => "#4F8DF5" })),
-            };
-            var name = new TextBlock { VerticalAlignment = VerticalAlignment.Center, [!TextBlock.TextProperty] = new Binding(nameof(Node.Name)) };
-            if (node.IsRoot) name.FontWeight = FontWeight.SemiBold;
-            var panel = new StackPanel { Orientation = Orientation.Horizontal, Background = Brushes.Transparent, Children = { icon, name } };
-            if (node.IsSession)
-            {
-                var sub = new TextBlock { FontSize = 11, Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, Classes = { "sub" },
-                    [!TextBlock.TextProperty] = new Binding(nameof(Node.Subtitle)) };
-                panel.Children.Add(sub);
-                panel.DoubleTapped += (_, e) => { OpenSession(node); e.Handled = true; };
-            }
-            AttachDrag(panel, node);
-            return panel;
-        }, n => n.Children);
-
-        _tree.Styles.Add(new Style(x => x.OfType<TreeViewItem>())
-        {
-            Setters =
-            {
-                new Setter(TreeViewItem.IsExpandedProperty, new Binding(nameof(Node.IsExpanded), BindingMode.TwoWay)),
-                new Setter(Visual.IsVisibleProperty, new Binding(nameof(Node.IsVisible))),
-                new Setter(TreeViewItem.IsSelectedProperty, new Binding(nameof(Node.IsSelected), BindingMode.TwoWay)),
-            },
-        });
-
-        _tree.KeyDown += Tree_KeyDown;
-        _tree.ContextRequested += Tree_ContextRequested;
-        DragDrop.SetAllowDrop(_tree, true);
-        _tree.AddHandler(DragDrop.DragOverEvent, Tree_DragOver);
-        _tree.AddHandler(DragDrop.DropEvent, Tree_Drop);
-    }
-
-    private Node? SelectedNode => _tree.SelectedItem as Node;
-
-    private static Node? NodeFrom(object? source)
-    {
-        for (var v = source as StyledElement; v != null; v = v.Parent)
-            if (v.DataContext is Node n) return n;
-        return null;
-    }
-
-    private Node TargetFolder(Protocol protocol)
-    {
-        var n = SelectedNode;
-        var folder = n == null ? null : n.IsFolder ? n : n.Parent;
-        return folder != null && folder.Protocol == protocol ? folder : _store.RootFor(protocol);
-    }
-
-    private void Tree_KeyDown(object? sender, KeyEventArgs e)
-    {
-        var node = SelectedNode;
-        if (node == null) return;
-        switch (e.Key)
-        {
-            case Key.Enter when node.IsSession: OpenSession(node); break;
-            case Key.F2 when !node.IsRoot: _ = Rename(node); break;
-            case Key.Delete when !node.IsRoot: _ = Delete(node); break;
-            default: return;
-        }
-        e.Handled = true;
-    }
-
-    private void ApplyFilter()
-    {
-        var text = (_filter.Text ?? "").Trim();
-        foreach (var root in _store.Data.Roots) Filter(root, text);
-    }
-
-    private static bool Filter(Node node, string text)
-    {
-        bool any = false;
-        foreach (var c in node.Children) any |= Filter(c, text);
-        bool self = text.Length == 0 || node.IsRoot
-                    || node.Name.Contains(text, StringComparison.CurrentCultureIgnoreCase)
-                    || (node.Settings?.Host.Contains(text, StringComparison.OrdinalIgnoreCase) ?? false)
-                    || (node.Settings?.Username.Contains(text, StringComparison.OrdinalIgnoreCase) ?? false);
-        node.IsVisible = self || any;
-        if (text.Length > 0 && any) node.IsExpanded = true;
-        return node.IsVisible && (self && !node.IsRoot || any);
-    }
-
-    // Drag and drop to move sessions and folders.
-
-    private Point? _dragStart;
-    private Node? _dragNode;
-
-    private void AttachDrag(Control c, Node node)
-    {
-        if (node.IsRoot) return;
-        c.PointerPressed += (_, e) =>
-        {
-            if (!e.GetCurrentPoint(c).Properties.IsLeftButtonPressed) return;
-            _dragStart = e.GetPosition(this);
-            _dragNode = node;
-        };
-        c.PointerReleased += (_, _) => { _dragStart = null; _dragNode = null; };
-        c.PointerMoved += async (_, e) =>
-        {
-            if (_dragStart is not { } start || _dragNode != node || !e.GetCurrentPoint(c).Properties.IsLeftButtonPressed) return;
-            var p = e.GetPosition(this);
-            if (Math.Abs(p.X - start.X) < 6 && Math.Abs(p.Y - start.Y) < 6) return;
-            _dragStart = null;
-            var data = new DataObject();
-            data.Set("sessionmanager/node", node.Id.ToString());
-            await DragDrop.DoDragDrop(e, data, DragDropEffects.Move);
-            _dragNode = null;
-        };
-    }
-
-    private Node? DropTarget(DragEventArgs e, out Node? dragged)
-    {
-        dragged = e.Data.Get("sessionmanager/node") is string id && Guid.TryParse(id, out var g) ? _store.FindById(g) : null;
-        var over = NodeFrom(e.Source);
-        if (dragged == null || over == null) return null;
-        var folder = over.IsFolder ? over : over.Parent;
-        if (folder == null || folder.Protocol != dragged.Protocol || folder == dragged || dragged.IsAncestorOf(folder) || folder == dragged.Parent) return null;
-        return folder;
-    }
-
-    private void Tree_DragOver(object? sender, DragEventArgs e)
-    {
-        if (e.Data.Contains(DataFormats.Files)) { e.DragEffects = DragDropEffects.Copy; return; }
-        e.DragEffects = DropTarget(e, out _) != null ? DragDropEffects.Move : DragDropEffects.None;
-    }
-
-    private void Tree_Drop(object? sender, DragEventArgs e)
-    {
-        if (e.Data.GetFiles() is { } files)
-        {
-            foreach (var f in files.Select(f => f.TryGetLocalPath()).OfType<string>()) _ = ImportPath(f);
-            return;
-        }
-        var folder = DropTarget(e, out var dragged);
-        if (folder == null || dragged == null) return;
-        _store.Remove(dragged);
-        _store.AddChild(folder, dragged);
-        dragged.IsSelected = true;
-        Save();
     }
 
     // ───────────── Tabs ─────────────
@@ -422,6 +259,13 @@ public sealed partial class MainWindow : Window
             view = terminal;
         }
         else if (node.Protocol == Protocol.Vnc) view = new VncTab(request, AskPassword, () => this);
+        else if (node.Protocol == Protocol.Web)
+        {
+            // No built-in browser here yet: open the device's page in the default browser.
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("xdg-open", request.Settings.WebUrl()) { UseShellExecute = false }); }
+            catch (Exception ex) { _ = Dialogs.Error(this, "Could not open the web browser", ex); }
+            return;
+        }
         else view = new RdpTab(request, AskPassword, () => this, _settings);
 
         var tab = new OpenTab(node, request, view);
@@ -535,6 +379,7 @@ public sealed partial class MainWindow : Window
     {
         try { _store.Save(); }
         catch (Exception ex) { _ = Dialogs.Error(this, "Could not save your sessions", ex); }
+        UpdateListTabs();
     }
 
     private Task Info(string text) => Dialogs.Info(this, text);

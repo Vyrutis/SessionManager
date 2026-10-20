@@ -21,6 +21,9 @@ static class VncViewTests
     public static void RunIsolated(Action<string, bool, string> check)
     {
         var psi = new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath!, "--vnc-wpf") { RedirectStandardOutput = true, UseShellExecute = false };
+        // Its own data folder: a separate instance even while the real app is running (and never the real sessions).
+        var data = Path.Combine(Path.GetTempPath(), "sm-vnc-test-" + Guid.NewGuid().ToString("N")[..8]);
+        psi.Environment["SESSIONMANAGER_DATA"] = data;
         using var child = System.Diagnostics.Process.Start(psi)!;
         int reported = 0;
         var until = DateTime.UtcNow.AddSeconds(90);
@@ -33,7 +36,8 @@ static class VncViewTests
             check(arrow < 0 ? text : text[..arrow], line.StartsWith("PASS"), arrow < 0 ? "" : text[(arrow + 5)..]);
         }
         if (reported < 2) check("VNC tab (WPF) reports its results", false, $"{reported} of 2 results");
-        try { child.Kill(); } catch { }
+        try { child.Kill(); child.WaitForExit(5000); } catch { }
+        try { Directory.Delete(data, true); } catch { }
     }
 
     public static void Run(Action<string, bool, string> check)

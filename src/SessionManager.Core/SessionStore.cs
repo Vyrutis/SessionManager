@@ -15,7 +15,7 @@ public sealed class SessionStore
         ? Path.GetFullPath(custom)
         : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SessionManager");
 
-    private static readonly string FilePath = Path.Combine(DataDir, "sessions.json");
+    public static readonly string FilePath = Path.Combine(DataDir, "sessions.json");
 
     public static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -41,6 +41,7 @@ public sealed class SessionStore
             try
             {
                 Data = JsonSerializer.Deserialize<AppData>(File.ReadAllText(FilePath), JsonOptions) ?? new AppData();
+                try { SessionBackup.MakeDaily(); } catch { /* a backup must never stop the app from starting */ }
             }
             catch (Exception ex)
             {
@@ -51,9 +52,39 @@ public sealed class SessionStore
             }
         }
 
+        Fill();
+        return warning;
+    }
+
+    /// <summary>Replaces the list with a backup (the current file is kept as sessions.json.before-restore-…).</summary>
+    /// <exception cref="InvalidDataException">The backup can't be read.</exception>
+    public void Restore(string backupPath)
+    {
+        AppData restored;
+        try { restored = JsonSerializer.Deserialize<AppData>(File.ReadAllText(backupPath), JsonOptions) ?? throw new InvalidDataException("The backup is empty."); }
+        catch (JsonException ex) { throw new InvalidDataException("The backup can't be read: " + ex.Message); }
+        if (File.Exists(FilePath)) File.Copy(FilePath, FilePath + $".before-restore-{DateTime.Now:yyyyMMdd-HHmmss}", overwrite: true);
+        // Only the sessions go back in time; the look of the app stays as it is now.
+        restored.Theme = Data.Theme;
+        restored.Ui = Data.Ui;
+        Data = restored;
+        Fill();
+        Save();
+    }
+
+    /// <summary>Fills in what an old or hand-edited file may lack and links parents.</summary>
+    private void Fill()
+    {
         Data.Roots ??= new();
+        Data.Roots = new(Data.Roots.Where(r => r != null));
         Data.Credentials ??= new();
         Data.Presets ??= new();
+        Data.Commands = (Data.Commands ?? new()).Where(c => c != null && !string.IsNullOrEmpty(c.Text)).ToList();
+        foreach (var c in Data.Commands) c.Name ??= "";
+        Data.HiddenTabs = (Data.HiddenTabs ?? new()).Where(Enum.IsDefined).Distinct().ToList();
+        if (Data.HiddenTabs.Count >= Enum.GetValues<Protocol>().Length) Data.HiddenTabs.Clear();
+        if (!Enum.IsDefined(Data.ActiveTab) || Data.HiddenTabs.Contains(Data.ActiveTab))
+            Data.ActiveTab = Enum.GetValues<Protocol>().First(p => !Data.HiddenTabs.Contains(p));
         Data.Ui = UiSettings.Normalize(Data.Ui);
         Data.Domains = (Data.Domains ?? new()).Select(DomainName.Clean).Where(d => d.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
@@ -62,14 +93,14 @@ public sealed class SessionStore
         EnsureRoot(Protocol.Ssh, "SSH sessions");
         EnsureRoot(Protocol.Rdp, "RDP sessions");
         EnsureRoot(Protocol.Vnc, "VNC sessions");
+        EnsureRoot(Protocol.Web, "Web sessions");
 
-        // Keep SSH first, then RDP, then VNC.
+        // Keep SSH first, then RDP, VNC and Web.
         var ordered = Data.Roots.Where(r => r.IsRoot).OrderBy(r => r.Protocol).ToList();
         Data.Roots.Clear();
         foreach (var r in ordered) Data.Roots.Add(r);
 
         foreach (var root in Data.Roots) LinkParents(root);
-        return warning;
     }
 
     private void EnsureRoot(Protocol p, string name)
@@ -94,6 +125,7 @@ public sealed class SessionStore
     public void Save()
     {
         Directory.CreateDirectory(DataDir);
+        try { SessionBackup.MakeDaily(); } catch { } // the first save of a new day (the app was left open overnight)
         var tmp = FilePath + ".tmp";
         File.WriteAllText(tmp, JsonSerializer.Serialize(Data, JsonOptions));
         File.Move(tmp, FilePath, overwrite: true);
@@ -109,9 +141,45 @@ public sealed class SessionStore
     {
         child.Parent = folder;
         child.Protocol = folder.Protocol;
-        folder.Children.Add(child);
-        Sort(folder);
+        if (Data.ManualOrder)
+        {
+            // In the user's own order, new folders go after the other folders and new sessions at the end.
+            int at = child.IsFolder ? folder.Children.TakeWhile(n => n.IsFolder).Count() : folder.Children.Count;
+            folder.Children.Insert(at, child);
+        }
+        else
+        {
+            folder.Children.Add(child);
+            Sort(folder);
+        }
         folder.IsExpanded = true;
+    }
+
+    /// <summary>Sorts a folder again after a rename or edit, unless the user arranges the list by hand.</summary>
+    public void Resort(Node folder)
+    {
+        if (!Data.ManualOrder) Sort(folder);
+    }
+
+    /// <summary>Puts <paramref name="nodes"/> into <paramref name="folder"/> at <paramref name="index"/>, keeping their order.</summary>
+    public void MoveTo(IReadOnlyList<Node> nodes, Node folder, int index)
+    {
+        foreach (var n in nodes)
+            if (n.Parent == folder && folder.Children.IndexOf(n) < index) index--;
+        foreach (var n in nodes) Remove(n);
+        index = Math.Clamp(index, 0, folder.Children.Count);
+        foreach (var n in nodes)
+        {
+            n.Parent = folder;
+            n.Protocol = folder.Protocol;
+            folder.Children.Insert(index++, n);
+        }
+    }
+
+    /// <summary>Sorts every folder of every tab (going back from the user's own order to A to Z).</summary>
+    public void SortAll()
+    {
+        foreach (var f in Data.Roots.SelectMany(r => r.Descendants().Where(n => n.IsFolder).Prepend(r))) Sort(f);
     }
 
     public void Remove(Node node)

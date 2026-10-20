@@ -267,19 +267,31 @@ public static class ConnectionImport
             if (proto == "RDP") protocol = Protocol.Rdp;
             else if (proto is "SSH1" or "SSH2") protocol = Protocol.Ssh;
             else if (proto == "VNC") protocol = Protocol.Vnc;
+            else if (proto is "HTTP" or "HTTPS") protocol = Protocol.Web;
             else continue;
             var host = ((string?)node.Attribute("Hostname") ?? "").Trim();
             if (host.Length == 0) continue;
+            SessionSettings? web = null;
+            if (protocol == Protocol.Web)
+            {
+                // mRemoteNG keeps the scheme in the protocol; the host may still be a full address.
+                web = SessionSettings.DefaultsFor(Protocol.Web);
+                web.WebHttps = proto == "HTTPS";
+                if (SessionSettings.TryParseWebUrl(host.Contains("://") ? host : $"{proto.ToLowerInvariant()}://{host}", out var https, out var h, out _, out var webPath))
+                    (web.WebHttps, host, web.WebPath) = (https, h, webPath);
+            }
             var folder = string.Join("/", node.Ancestors("Node")
                 .Where(a => string.Equals((string?)a.Attribute("Type"), "Container", StringComparison.OrdinalIgnoreCase))
                 .Select(a => (string?)a.Attribute("Name") ?? "").Where(n => n.Length > 0).Reverse());
             list.Add(new ImportedConnection
             {
                 Name = (string?)node.Attribute("Name") ?? host, Protocol = protocol, Host = host,
-                Port = int.TryParse((string?)node.Attribute("Port"), out var p) && p is > 0 and < 65536 ? p : DefaultPort(protocol),
+                Port = int.TryParse((string?)node.Attribute("Port"), out var p) && p is > 0 and < 65536 ? p
+                    : web != null ? (web.WebHttps ? 443 : 80) : DefaultPort(protocol),
                 Username = protocol == Protocol.Vnc ? "" : ((string?)node.Attribute("Username") ?? "").Trim(),
                 Domain = protocol == Protocol.Rdp ? ((string?)node.Attribute("Domain") ?? "").Trim() : "",
                 Folder = folder,
+                Template = web,
             });
         }
         return list;

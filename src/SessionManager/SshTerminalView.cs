@@ -15,7 +15,6 @@ namespace SessionManager;
 public sealed class SshTerminalView : Grid, ISessionView
 {
     private const string VirtualHost = "sessionmanager.local";
-    private static Task<CoreWebView2Environment>? _environment;
 
     private readonly ConnectRequest _request;
     private readonly Func<string, bool, (string Password, bool Save)?> _askPassword;
@@ -81,15 +80,11 @@ public sealed class SshTerminalView : Grid, ISessionView
 
     public void ShowFind() => Post(new { type = "find" });
 
-    private static Task<CoreWebView2Environment> Environment =>
-        _environment ??= CoreWebView2Environment.CreateAsync(null,
-            Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData), "SessionManager", "WebView2"));
-
     public async void Start()
     {
         try
         {
-            await _web.EnsureCoreWebView2Async(await Environment);
+            await _web.EnsureCoreWebView2Async(await WebViewHost.Environment);
         }
         catch (Exception ex)
         {

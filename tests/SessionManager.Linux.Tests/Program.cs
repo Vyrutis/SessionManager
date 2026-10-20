@@ -29,6 +29,7 @@ AppBuilder.Configure<App>()
     .WithInterFont()
     .SetupWithoutStarting();
 RenderTests.Run(Check, shots);
+SessionListTests.Run(Check, shots);
 
 try { Directory.Delete(dataDir, true); } catch { }
 Console.WriteLine($"\n{pass} passed, {fail} failed");

@@ -71,6 +71,9 @@ public static class SessionFile
         s.PrivateKeyPath ??= "";
         s.FontFamily ??= "";
         s.ColorScheme ??= "Auto";
+        s.WebPath ??= "";
+        s.TrustedCertificate ??= "";
+        s.MacAddress ??= "";
         s.Tunnels = s.Tunnels?.Where(t => !string.IsNullOrWhiteSpace(t)).ToList() ?? new();
         if (s.FontSize is < 6 or > 72) s.FontSize = 14;
         return s;

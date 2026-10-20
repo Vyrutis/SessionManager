@@ -189,7 +189,7 @@ public sealed partial class MainWindow
             try { CredentialStore.Set(node.Id, tab.Request.Password, node.Settings.Username); }
             catch (Exception ex) { await Error("Could not save the password", ex); }
         }
-        node.IsSelected = true;
+        Select(node);
         Save();
     }
 
@@ -199,8 +199,6 @@ public sealed partial class MainWindow
     {
         var node = NodeFrom(e.Source);
         e.Handled = true;
-        if (node == null) return;
-        node.IsSelected = true;
         var items = new List<object>();
         MenuItem Item(string header, Action action, string? gesture = null, bool enabled = true)
         {
@@ -212,6 +210,50 @@ public sealed partial class MainWindow
         }
         void Sep() => items.Add(new Separator());
 
+        var targets = Targets();
+        if (node != null && targets.Count > 1 && targets.Contains(node))
+        {
+            // Several items picked with Ctrl/Shift+click.
+            var sessions = targets.Where(n => n.IsSession).ToList();
+            if (sessions.Count > 0)
+                Item(sessions.Count == 1 ? "Connect" : $"Connect {sessions.Count} sessions", () => { foreach (var s in sessions) OpenSession(s); }, "Enter");
+            Item("Export selected…", () => _ = ExportNodes(Outermost(targets), full: false, "Export selected sessions", "Sessions"));
+            Sep();
+            Item($"Delete {targets.Count} items", () => _ = Delete(targets), "Delete");
+            Item("Clear selection", ClearSelection, "Escape");
+            new ContextMenu { ItemsSource = items }.Open(_tree);
+            return;
+        }
+
+        if (node == null)
+        {
+            // Empty space: actions for the tab that is shown.
+            ClearSelection();
+            var root = ActiveRoot;
+            var p = root.Protocol;
+            Item($"New {Kind(p)} session…", () => _ = NewSession(p));
+            Item($"New {Kind(p)} folder…", () => _ = NewFolder(root));
+            Sep();
+            Item("Import sessions here…", () => _ = ImportPicked(root));
+            Item($"Export all {Kind(p)} sessions…", () => _ = ExportList(root));
+            Item("Export all sessions…", () => _ = ExportList(null));
+            if (root.Children.Count > 0)
+            {
+                Sep();
+                Item("Select all", () => { foreach (var n in root.Children.Where(n => n.IsVisible)) n.IsSelected = true; }, "Ctrl+A");
+                if (root.Children.Any(c => c.IsFolder))
+                {
+                    Item("Expand all", () => SetExpanded(root, true));
+                    Item("Collapse all", () => SetExpanded(root, false));
+                }
+                Item($"Delete all {Kind(p)} sessions…", () => _ = Delete(root.Children.ToList()));
+            }
+            new ContextMenu { ItemsSource = items }.Open(_tree);
+            return;
+        }
+
+        ClearSelection();
+        Select(node);
         if (node.IsSession)
         {
             Item("Connect", () => OpenSession(node), "Enter");
@@ -227,13 +269,11 @@ public sealed partial class MainWindow
             Item("Use these settings for new sessions", () => SaveAsPreset(node));
             Item("Export to file…", () => _ = Export(node));
             Sep();
-            Item("Delete", () => _ = Delete(node), "Delete");
+            Item("Delete", () => _ = Delete([node]), "Delete");
         }
         else
         {
-            Item("New SSH session here…", () => { node.IsSelected = true; _ = NewSession(Protocol.Ssh); }, enabled: node.Protocol == Protocol.Ssh);
-            Item("New Remote Desktop session here…", () => { node.IsSelected = true; _ = NewSession(Protocol.Rdp); }, enabled: node.Protocol == Protocol.Rdp);
-            Item("New VNC session here…", () => { node.IsSelected = true; _ = NewSession(Protocol.Vnc); }, enabled: node.Protocol == Protocol.Vnc);
+            Item($"New {Kind(node.Protocol)} session here…", () => { Select(node); _ = NewSession(node.Protocol); });
             Item("New folder…", () => _ = NewFolder(node));
             Sep();
             Item("Expand all", () => SetExpanded(node, true));
@@ -241,12 +281,9 @@ public sealed partial class MainWindow
             Sep();
             Item("Export this folder…", () => _ = ExportList(node));
             Item("Import sessions here…", () => _ = ImportPicked(node));
-            if (!node.IsRoot)
-            {
-                Sep();
-                Item("Rename…", () => _ = Rename(node), "F2");
-                Item("Delete", () => _ = Delete(node), "Delete");
-            }
+            Sep();
+            Item("Rename…", () => _ = Rename(node), "F2");
+            Item("Delete", () => _ = Delete([node]), "Delete");
         }
         new ContextMenu { ItemsSource = items }.Open(_tree);
     }
@@ -277,7 +314,7 @@ public sealed partial class MainWindow
         _store.AddChild(folder, node);
         RememberDomain(dlg.Result);
         await ApplyPassword(node, dlg);
-        node.IsSelected = true;
+        Select(node);
         Save();
     }
 
@@ -379,7 +416,7 @@ public sealed partial class MainWindow
         if (name == null) return;
         var folder = new Node { Kind = NodeKind.Folder, Name = name, IsExpanded = true };
         _store.AddChild(parent, folder);
-        folder.IsSelected = true;
+        Select(folder);
         Save();
     }
 
@@ -393,26 +430,41 @@ public sealed partial class MainWindow
         Save();
     }
 
-    private async Task Delete(Node node)
+    /// <summary>Deletes sessions and folders (with everything in them) after asking once.</summary>
+    private async Task Delete(List<Node> nodes)
     {
+        nodes = Outermost(nodes.Where(n => !n.IsRoot).ToList());
+        if (nodes.Count == 0) return;
+        var deleted = nodes.SelectMany(n => n.Descendants().Prepend(n)).Where(n => n.IsSession).ToList();
         string question;
-        if (node.IsSession) question = $"Delete the session \"{node.Name}\"?";
-        else
+        if (nodes.Count == 1)
         {
-            int count = node.Descendants().Count(n => n.IsSession);
-            question = count == 0
-                ? $"Delete the folder \"{node.Name}\"?"
+            var node = nodes[0];
+            int count = deleted.Count;
+            question = node.IsSession ? $"Delete the session \"{node.Name}\"?"
+                : count == 0 ? $"Delete the folder \"{node.Name}\"?"
                 : $"Delete the folder \"{node.Name}\" and the {count} session{(count == 1 ? "" : "s")} in it?";
         }
-        var deleted = node.Descendants().Prepend(node).Where(n => n.IsSession).ToList();
+        else
+        {
+            int folders = nodes.Count(n => n.IsFolder);
+            int sessions = nodes.Count(n => n.IsSession);
+            int inside = deleted.Count - sessions;
+            var parts = new List<string>();
+            if (sessions > 0) parts.Add($"{sessions} session{(sessions == 1 ? "" : "s")}");
+            if (folders > 0) parts.Add($"{folders} folder{(folders == 1 ? "" : "s")}" +
+                                       (inside > 0 ? $" (with {inside} session{(inside == 1 ? "" : "s")} in them)" : ""));
+            question = $"Delete {string.Join(" and ", parts)}?\n\n" +
+                       string.Join("\n", nodes.Take(12).Select(n => "  " + n.Name)) + (nodes.Count > 12 ? $"\n  … and {nodes.Count - 12} more" : "");
+        }
         var deletedIds = deleted.Select(n => n.Id).ToHashSet();
         var dependents = _store.Data.Roots.SelectMany(r => r.Descendants())
             .Where(n => n.Settings?.JumpHostId is Guid j && deletedIds.Contains(j) && !deletedIds.Contains(n.Id))
             .ToList();
         if (dependents.Count > 0)
-            question += $"\n\n{dependents.Count} other session{(dependents.Count == 1 ? " uses" : "s use")} it as a jump host " +
-                        "and will connect directly afterwards.";
-        if (!await Dialogs.Confirm(this, question + "\n\nSaved passwords are removed too.", "Delete", "Delete", "Cancel", defaultNo: true)) return;
+            question += $"\n\n{dependents.Count} other session{(dependents.Count == 1 ? " uses" : "s use")} " +
+                        $"{(deleted.Count == 1 ? "it" : "one of them")} as a jump host and will connect directly afterwards.";
+        if (!await AskDelete(this, question + "\n\nSaved passwords are removed too.")) return;
 
         await Task.Run(() =>
         {
@@ -423,9 +475,14 @@ public sealed partial class MainWindow
             }
         });
         foreach (var d in dependents) d.Settings!.JumpHostId = null;
-        _store.Remove(node);
+        ClearSelection();
+        foreach (var n in nodes) _store.Remove(n);
         Save();
     }
+
+    /// <summary>Asks before deleting; replaced in tests.</summary>
+    internal static Func<Window, string, Task<bool>> AskDelete = (owner, question) =>
+        Dialogs.Confirm(owner, question, "Delete", "Delete", "Cancel", defaultNo: true);
 
     private async Task Duplicate(Node node)
     {
@@ -436,7 +493,7 @@ public sealed partial class MainWindow
         {
             try { CredentialStore.Set(copy.Id, password, copy.Settings.Username); } catch { }
         }
-        copy.IsSelected = true;
+        Select(copy);
         Save();
     }
 

@@ -62,6 +62,7 @@ public static class UiTheme
             if (weak.TryGetTarget(out var c)) c.LayoutTransform = new ScaleTransform(Ui.Scale, Ui.Scale);
             else Scaled.Remove(weak);
         }
+        AppIcon.Update(Ui);
         Changed?.Invoke();
     }
 

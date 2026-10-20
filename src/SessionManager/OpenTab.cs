@@ -69,6 +69,7 @@ public sealed class OpenTab : INotifyPropertyChanged
         get
         {
             var s = Request.Settings;
+            if (Session.Protocol == Protocol.Web) return $"{s.WebUrl()} — {View.Status}";
             var user = string.IsNullOrEmpty(s.Username) ? "" : s.Username + "@";
             return $"{user}{s.Host}:{s.Port} — {View.Status}";
         }

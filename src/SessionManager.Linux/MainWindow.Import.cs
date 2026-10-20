@@ -109,7 +109,7 @@ public sealed partial class MainWindow
         }
         if (last != null)
         {
-            last.IsSelected = true;
+            Select(last);
             Save();
         }
     }
@@ -196,6 +196,14 @@ public sealed partial class MainWindow
         List<Node> items = folder == null ? _store.Data.Roots.SelectMany(r => r.Children).ToList()
             : folder.IsRoot ? folder.Children.ToList()
             : [folder];
+        await ExportNodes(items, full: folder == null,
+            folder == null ? "Export all sessions" : $"Export \"{folder.Name}\"",
+            folder == null ? "Sessions" : folder.Name);
+    }
+
+    /// <summary>Saves these items to a .smlist file; a full export also takes every profile and the presets.</summary>
+    private async Task ExportNodes(List<Node> items, bool full, string title, string baseName)
+    {
         var sessions = SessionList.AllNodes(items).Where(n => n.IsSession).ToList();
         if (sessions.Count == 0)
         {
@@ -203,12 +211,11 @@ public sealed partial class MainWindow
             return;
         }
         var used = sessions.Select(s => s.Settings?.CredentialId).OfType<Guid>().ToHashSet();
-        var profiles = _store.Data.Credentials.Where(c => folder == null || used.Contains(c.Id)).ToList();
+        var profiles = _store.Data.Credentials.Where(c => full || used.Contains(c.Id)).ToList();
 
-        var baseName = folder == null ? "Sessions" : folder.Name;
         var file = await Storage.SaveFilePickerAsync(new FilePickerSaveOptions
         {
-            Title = folder == null ? "Export all sessions" : $"Export \"{folder.Name}\"",
+            Title = title,
             SuggestedFileName = SafeName($"{baseName} {DateTime.Now:yyyy-MM-dd}") + SessionList.Extension,
             DefaultExtension = "smlist",
             FileTypeChoices = [Type("Session Manager session list", "*.smlist")],
@@ -238,7 +245,7 @@ public sealed partial class MainWindow
             }
         }
 
-        var model = SessionList.Build(items, profiles, folder == null ? _store.Data.Presets : null, passphrase != null ? passwords : null, passphrase);
+        var model = SessionList.Build(items, profiles, full ? _store.Data.Presets : null, passphrase != null ? passwords : null, passphrase);
         passwords.Clear();
         SessionList.Write(path, model);
         int folders = SessionList.AllNodes(items).Count(n => n.IsFolder);
@@ -333,7 +340,7 @@ public sealed partial class MainWindow
             }
 
             ApplyFilter();
-            if (result.AddedSessions.FirstOrDefault() is { } first) first.IsSelected = true;
+            if (result.AddedSessions.FirstOrDefault() is { } first) Select(first);
             Save();
             await Info($"Imported {result.Added} session{(result.Added == 1 ? "" : "s")}" +
                        (result.Folders > 0 ? $" and {result.Folders} new folder{(result.Folders == 1 ? "" : "s")}" : "") + "." +
@@ -536,7 +543,7 @@ public sealed partial class MainWindow
             last = node;
         }
 
-        if (last != null) last.IsSelected = true;
+        if (last != null) Select(last);
         ApplyFilter();
         Save();
         var msg = $"Added {added} connection{(added == 1 ? "" : "s")} from {source}.";

@@ -1,6 +1,6 @@
 # Session Manager
 
-A desktop app for SSH, Remote Desktop (RDP) and VNC connections. Your servers are kept in a folder tree, sessions open as tabs in one window, and passwords are kept in the system's password store, never in the app's files.
+A desktop app for SSH, Remote Desktop (RDP) and VNC connections, and (on Windows) the web pages of devices such as routers, switches and printers. Your servers are kept in a folder tree, sessions open as tabs in one window, and passwords are kept in the system's password store, never in the app's files.
 
 There are two apps built from one code base:
 
@@ -10,13 +10,14 @@ There are two apps built from one code base:
 | SSH terminal | [xterm.js](https://xtermjs.org) in WebView2 | built-in terminal emulator |
 | Remote Desktop | Windows Remote Desktop control, inside the tab | [FreeRDP](https://www.freerdp.com) 3, in its own window or inside the tab |
 | VNC | built-in viewer, inside the tab | built-in viewer, inside the tab |
+| Device web pages (https) | Edge (WebView2), inside the tab | opened in the default browser |
 | Saved passwords | Windows Credential Manager | desktop keyring (GNOME Keyring, KWallet, KeePassXC) via Secret Service |
 | Screenshot / PDF scan | Windows text recognition | [Tesseract](https://github.com/tesseract-ocr/tesseract) + poppler |
 | Installer | `.msi` | Arch package (`PKGBUILD`) or tarball with `install.sh` |
-| Version in this branch | 1.2.0 | 1.3.0 |
-| Latest release download | [v1.1.0](../../releases/tag/v1.1.0) (no VNC yet) | [v1.2.0](../../releases/tag/v1.2.0) (no VNC yet) |
+| Version in this branch | 1.3.1 | 1.4.0 |
+| Latest release download | [v1.3.1](../../releases/tag/v1.3.1) | [v1.2.0](../../releases/tag/v1.2.0) (no VNC yet) |
 
-VNC is new in Windows 1.2.0 / Linux 1.3.0. Until those are released, build them from source: [Windows](#build), [Arch](#install-on-arch-from-source-includes-vnc).
+VNC is new in Windows 1.2.0 / Linux 1.3.0, and the SSH / RDP / VNC list tabs with multiple selection in Windows 1.3.0 / Linux 1.4.0. Windows 1.3.0 also adds web sessions, arranging the list by dragging, favourites, online dots, Wake-on-LAN, saved commands and daily backups, and 1.3.1 shows only the tab icons when the list is narrow. These Windows features are in the v1.3.1 release; the Linux ones are not released yet, so build those from source: [Windows](#build), [Arch](#install-on-arch-from-source-includes-vnc).
 
 Both use [SSH.NET](https://github.com/sshnet/SSH.NET) and .NET 10, and read and write the same session files, so a list exported on one runs on the other.
 
@@ -30,8 +31,15 @@ Both use [SSH.NET](https://github.com/sshnet/SSH.NET) and .NET 10, and read and 
 
 ### Sessions
 - **SSH, RDP and VNC in tabs.** Open many sessions side by side. You can reconnect, duplicate or close tabs, and use Ctrl+Tab and Ctrl+Shift+W.
-- **Folder tree.** SSH, RDP and VNC sessions sit in separate groups with any number of folders. You can drag and drop, filter (Ctrl+F), and expand or collapse all.
-- **Quick connect.** Type `user@host[:port]`, `rdp://host` or `vnc://host` (also `vnc://host:1` for display 1, `vnc://host::5901` for a port) in the toolbar.
+- **Session list with SSH, RDP, VNC and Web tabs.** Each tab holds that kind of session in any number of folders. A tab you don't use can be hidden (right-click it, or the ⋯ button next to the tabs); the tabs show how many sessions they hold, or how many match the filter (Ctrl+F). You can drag and drop, and expand or collapse all. (The Linux app has no Web tab yet; it opens web sessions in the default browser.)
+- **Your own order** (Windows). Drag an item above or below another to put it there, or onto the middle of a folder to move it inside; Alt+Up / Alt+Down move the selected item. The list then keeps your order; *Keep sorted A to Z* (right-click empty space, or ⋯) sorts it by name again.
+- **Favourites** (Windows). Right-click → *Add to favourites* puts a star on a session; the star in the filter box shows only favourites.
+- **Online dots** (Windows). A small green or red dot on each session's icon says whether its host answers on the session's port, checked about once a minute for the tab you're looking at (hover for details). Sessions behind a jump host aren't checked. Turn it off under ⋯.
+- **Wake-on-LAN** (Windows). Right-click → *Wake up* sends the wake-up packet; the network card address is looked up automatically when the computer was on the network lately, and saved. It can connect as soon as the computer answers.
+- **Several at once.** Ctrl+click adds or removes an item, Shift+click (or Shift+arrow keys on Windows) selects a range, Ctrl+A selects the whole tab. Then press Del to delete them all after one question, Enter to connect to all of them, drag them into a folder, or right-click to export them.
+- **Quick connect.** Type `user@host[:port]`, `rdp://host`, `vnc://host` (also `vnc://host:1` for display 1, `vnc://host::5901` for a port) or `https://address` in the toolbar. On Windows the box also lists your recent sessions when you click into it, and finds saved sessions as you type (↓ to pick one, Enter to connect).
+- **Edit several at once** (Windows). Select sessions with Ctrl+click, right-click → *Edit N sessions* and tick what to change: credential profile, user name, password, port, jump host.
+- **Duplicate check** (Windows). Adding a second session for the same address and user asks first.
 - **Connect as…** Open a saved session with different credentials once.
 - **Shortcuts.** On Windows, a desktop shortcut; on Linux, an entry in the application menu (launcher search finds it). Either opens one session directly, and a second launch hands the session to the window that is already open.
 - **Ping host.** Checks ICMP and whether the session's TCP port answers.
@@ -45,6 +53,14 @@ Both use [SSH.NET](https://github.com/sshnet/SSH.NET) and .NET 10, and read and 
 - **Private key** authentication (`~/.ssh/id_ed25519`, `id_ecdsa`, `id_rsa` are tried automatically).
 - **Host key checking.** Remembers fingerprints and warns when a server's key changes.
 - **Multi-exec.** Send what you type to several SSH tabs at once.
+- **Saved commands** (Windows). Right-click an SSH tab → *Send command*: commands you save once and send with a click, to every included tab when multi-exec is on.
+
+### Web pages of devices (Windows)
+- **Web sessions** open a device's page (router, switch, firewall, iLO / iDRAC, NAS, printer, camera…) in a tab, with back / forward / reload, the address, *Fill login* and *Open in browser*. Paste a whole address such as `https://10.0.0.1:8443/admin` into Host, or type it into quick connect.
+- **Self-signed certificates:** the first time, the certificate is shown (issued to, by, valid until, SHA-256 fingerprint) and you decide whether to trust it. That exact certificate is remembered for the session; if it ever changes you're warned and asked again. Certificates of other sites are never trusted this way.
+- **Logins** are saved in Windows Credential Manager like other sessions. Pages that ask with the browser's login box get them automatically; for login forms, click *Fill login*. The browser doesn't store passwords itself.
+- **SSH gateway:** reach a device on another network through a saved SSH session.
+- mRemoteNG HTTP / HTTPS connections are imported as web sessions.
 
 ### Remote Desktop
 - Fit to the window or a fixed resolution, color depth and scaling.
@@ -60,8 +76,9 @@ Both use [SSH.NET](https://github.com/sshnet/SSH.NET) and .NET 10, and read and 
 - **Clipboard:** text copied on the remote computer arrives on yours; text you copy is sent when you click back into the VNC tab. Can be turned off per session.
 - **Encryption:** plain VNC is not encrypted. Choose an *SSH gateway* (jump host) in the session to tunnel the connection through SSH.
 
-### Credentials
+### Credentials and backups
 - Passwords are saved only in the system's password store (see the table above).
+- **Daily backups.** A copy of the session list (without passwords) is kept each day the app is used, for the last 30 days, in `Backups` next to `sessions.json`. *Import / Export → Restore a backup…* goes back to one (Windows); the list before the restore is kept as a file.
 - **Credential profiles.** One user name and password shared by many sessions; change it once and every session uses the new one.
 
 ### Import and export
@@ -104,7 +121,7 @@ Both use [SSH.NET](https://github.com/sshnet/SSH.NET) and .NET 10, and read and 
 - For screenshot and PDF scanning: a Windows display language with text recognition support (English and most others)
 
 ### Install
-Download `SessionManager-<version>.msi` from [Releases](../../releases) and run it (the released 1.1.0 has no VNC yet; build 1.2.0 with the commands under [Build](#build)). The installer is self-contained (it includes the .NET runtime), installs per-machine, and adds Start-menu and optional desktop shortcuts.
+Download `SessionManager-<version>.msi` from [Releases](../../releases) and run it. Installing a newer build over an older one replaces it and keeps your sessions and settings. The installer is self-contained (it includes the .NET runtime), installs per-machine, and adds Start-menu and optional desktop shortcuts.
 
 The MSI is **not code-signed**, so Windows SmartScreen may show "Windows protected your PC". Choose *More info → Run anyway*.
 
@@ -139,7 +156,7 @@ makepkg -si
 
 ### Install on Arch from source (includes VNC)
 
-The released v1.2.0 package has no VNC yet. To get the current version (1.3.0, with VNC), build the package from the repository. This needs the .NET 10 SDK, which `makepkg` installs for the build:
+The released v1.2.0 package has no VNC yet. To get the current version (1.4.0, with VNC), build the package from the repository. This needs the .NET 10 SDK, which `makepkg` installs for the build:
 
 ```bash
 sudo pacman -S --needed git github-cli base-devel
@@ -269,6 +286,9 @@ packaging/linux/build.sh --arch     # also makes packaging/arch-bin/sessionmanag
 |---|---|
 | Session tree, file formats, imports, OCR parsing, SSH connection, keyring | `src/SessionManager.Core` (shared by both apps) |
 | Linux window, toolbar, menus, tree, tabs | `src/SessionManager.Linux/MainWindow*.cs` |
+| Session list: SSH / RDP / VNC / Web tabs, multiple selection, drag and drop, your own order, filter, favourites | `src/SessionManager.Linux/MainWindow.List.cs`, Windows: `src/SessionManager/MainWindow.List.cs` |
+| Windows: online dots, quick-connect list, Wake-on-LAN, editing several sessions, saved commands, duplicates | `src/SessionManager/MainWindow.Status.cs`, `MainWindow.Quick.cs`, `MainWindow.Tools.cs` |
+| Windows: web sessions (certificates, logins) | `src/SessionManager/WebSessionView.cs` |
 | Terminal (escape sequences / drawing / keys) | `src/SessionManager.Linux/Terminal/VtTerminal.cs`, `TerminalView.cs` |
 | Remote Desktop (FreeRDP command line, exit messages) | `src/SessionManager.Linux/FreeRdp.cs`, `RdpTab.cs` |
 | VNC protocol (login, screen encodings, keys) | `src/SessionManager.Core/Vnc/` (shared) |
@@ -286,10 +306,13 @@ src/SessionManager.Core/     shared by both apps (no UI)
   ScreenshotScan             finding connections in recognized text (rows, columns, labels)
   SshConnector, KnownHosts   SSH login, jump hosts, port forwards, host keys
   CredentialStore            Windows Credential Manager, or SecretService (Linux keyring)
+  SessionBackup              daily copies of sessions.json and restoring them
+  WakeOnLan, HostProbe       wake-up packets, network card lookup, the online check
+  CertificateFingerprint     SHA-256 fingerprints of web certificates
   Vnc/                       VNC client: VncClient (RFB 3.3–3.8, ZRLE/Hextile/Zlib/CopyRect/Raw), VncAuth (DES), VncKeys
 src/SessionManager/          the Windows app (WPF)
   MainWindow.*, SessionDialog, ImportReviewWindow, Theme*, ColorPicker, CloseAnimation
-  SshTerminalView, SftpPanel, RdpView, VncView, WindowsOcr, wwwroot/ (xterm.js)
+  SshTerminalView, SftpPanel, RdpView, VncView, WebSessionView, WindowsOcr, wwwroot/ (xterm.js)
 src/SessionManager.Linux/    the Linux app (Avalonia)
   MainWindow*.cs             window, tree, tabs, import / export / scan
   SshTab, SftpPanel          SSH tab and file panel

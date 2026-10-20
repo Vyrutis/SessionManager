@@ -51,8 +51,21 @@ public partial class SessionDialog : Window
         SshGroup.Visibility = protocol == Protocol.Ssh ? Visibility.Visible : Visibility.Collapsed;
         RdpGroup.Visibility = protocol == Protocol.Rdp ? Visibility.Visible : Visibility.Collapsed;
         VncGroup.Visibility = protocol == Protocol.Vnc ? Visibility.Visible : Visibility.Collapsed;
+        WebGroup.Visibility = protocol == Protocol.Web ? Visibility.Visible : Visibility.Collapsed;
         // VNC servers ask for a password only.
         UserLabel.Visibility = UserRow.Visibility = protocol == Protocol.Vnc ? Visibility.Collapsed : Visibility.Visible;
+        if (protocol == Protocol.Web)
+        {
+            // Web logins have no Windows domain.
+            DomainBox.Visibility = UserSlash.Visibility = Visibility.Collapsed;
+            Grid.SetColumn(UserBox, 0);
+            Grid.SetColumnSpan(UserBox, 3);
+            HostBox.ToolTip = "Host name or IP address, or a whole address such as https://10.0.0.1:8443/admin";
+            HostBox.LostFocus += (_, _) => SplitWebAddress();
+            WebPathBox.Text = settings.WebPath;
+            WebHttpsBox.IsChecked = settings.WebHttps;
+            ForgetCertBox.Visibility = string.IsNullOrEmpty(settings.TrustedCertificate) ? Visibility.Collapsed : Visibility.Visible;
+        }
 
         // Credential profiles
         CredentialBox.Items.Add(new ComboBoxItem { Content = protocol == Protocol.Vnc ? "This session only (enter the password below)" : "This session only (enter below)" });
@@ -138,7 +151,27 @@ public partial class SessionDialog : Window
 
     private static Guid? SelectedId(ComboBox box) => (box.SelectedItem as ComboBoxItem)?.Tag as Guid?;
 
-    private ComboBox JumpBoxFor(Protocol p) => p switch { Protocol.Ssh => JumpBox, Protocol.Vnc => VncJumpBox, _ => RdpJumpBox };
+    private ComboBox JumpBoxFor(Protocol p) => p switch { Protocol.Ssh => JumpBox, Protocol.Vnc => VncJumpBox, Protocol.Web => WebJumpBox, _ => RdpJumpBox };
+
+    /// <summary>A pasted "https://host:port/page" is split into Host, Port, Page and https.</summary>
+    private void SplitWebAddress()
+    {
+        var text = HostBox.Text.Trim();
+        if (!text.Contains("://") && !text.Contains('/')) return;
+        if (!SessionSettings.TryParseWebUrl(text, out var https, out var host, out var port, out var path)) return;
+        HostBox.Text = host;
+        PortBox.Text = port.ToString();
+        WebHttpsBox.IsChecked = https;
+        if (path.Length > 0) WebPathBox.Text = path;
+    }
+
+    /// <summary>Switching http / https moves the port along when it is the usual one.</summary>
+    private void WebHttpsBox_Click(object sender, RoutedEventArgs e)
+    {
+        bool https = WebHttpsBox.IsChecked == true;
+        if (https && PortBox.Text.Trim() == "80") PortBox.Text = "443";
+        else if (!https && PortBox.Text.Trim() == "443") PortBox.Text = "80";
+    }
 
     private void BrowseKey_Click(object sender, RoutedEventArgs e)
     {
@@ -153,6 +186,7 @@ public partial class SessionDialog : Window
 
     private void Ok_Click(object sender, RoutedEventArgs e)
     {
+        if (_protocol == Protocol.Web) SplitWebAddress();
         var host = HostBox.Text.Trim();
         if (host.Length == 0)
         {
@@ -194,8 +228,14 @@ public partial class SessionDialog : Window
         {
             // A domain typed into the username box ("CORP\admin") wins over the drop-down.
             var (domain, user) = SplitUser(UserBox.Text.Trim(), DomainBox.Domain);
-            if (DomainPicker.Remember(domain)) DomainPicker.SavedChanged?.Invoke();
-            s.Username = _protocol switch { Protocol.Ssh => DomainPicker.Combine(domain, user), Protocol.Vnc => "", _ => user };
+            if (_protocol != Protocol.Web && DomainPicker.Remember(domain)) DomainPicker.SavedChanged?.Invoke();
+            s.Username = _protocol switch
+            {
+                Protocol.Ssh => DomainPicker.Combine(domain, user),
+                Protocol.Vnc => "",
+                Protocol.Web => UserBox.Text.Trim(), // typed as is, backslashes included
+                _ => user,
+            };
             s.Domain = _protocol == Protocol.Rdp ? domain : "";
         }
         s.CredentialId = SelectedProfile?.Id;
@@ -209,6 +249,13 @@ public partial class SessionDialog : Window
             s.FontFamily = font == TerminalSchemes.Fonts[0] ? "" : font;
             s.ColorScheme = SchemeBox.SelectedItem as string ?? TerminalSchemes.Auto;
             s.Tunnels = tunnels;
+        }
+        else if (_protocol == Protocol.Web)
+        {
+            var path = WebPathBox.Text.Trim();
+            s.WebPath = path.Length == 0 || path == "/" ? "" : path.StartsWith('/') ? path : "/" + path;
+            s.WebHttps = WebHttpsBox.IsChecked == true;
+            if (ForgetCertBox.IsChecked == true) s.TrustedCertificate = "";
         }
         else if (_protocol == Protocol.Vnc)
         {

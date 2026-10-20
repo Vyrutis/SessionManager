@@ -69,7 +69,7 @@
                         <ColumnDefinition Width="7*" />
                     </Grid.ColumnDefinitions>
                     <local:DomainPicker x:Name="DomainBox" Margin="0,3" />
-                    <TextBlock Grid.Column="1" Text="\" FontSize="14" Margin="6,0" VerticalAlignment="Center"
+                    <TextBlock x:Name="UserSlash" Grid.Column="1" Text="\" FontSize="14" Margin="6,0" VerticalAlignment="Center"
                                Foreground="{DynamicResource SubTextBrush}" />
                     <TextBox x:Name="UserBox" Grid.Column="2" />
                 </Grid>
@@ -165,6 +165,29 @@
                     <CheckBox x:Name="ViewOnlyBox" Content="View only (don't send keyboard and mouse)" />
                     <CheckBox x:Name="VncClipboardBox" Content="Share clipboard" />
                 </StackPanel>
+            </Grid>
+        </GroupBox>
+
+        <GroupBox x:Name="WebGroup" Header="Web page" Padding="8" Margin="0,10,0,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition />
+                </Grid.RowDefinitions>
+                <TextBlock Style="{StaticResource Label}" Text="Page:" />
+                <TextBox x:Name="WebPathBox" Grid.Column="1" ToolTip="Optional, e.g. /admin or /login.html. Leave empty for the start page." />
+                <CheckBox x:Name="WebHttpsBox" Grid.Row="1" Grid.Column="1" Content="Use https (encrypted)" Click="WebHttpsBox_Click"
+                          ToolTip="Most devices use https. Untick for devices that only offer http." />
+                <TextBlock Style="{StaticResource Label}" Grid.Row="2" Text="SSH gateway:" />
+                <ComboBox x:Name="WebJumpBox" Grid.Row="2" Grid.Column="1"
+                          ToolTip="Reach the device through a saved SSH session, e.g. one on the device's network" />
+                <TextBlock x:Name="WebHint" Grid.Row="3" Grid.Column="1" Style="{StaticResource Hint}" Margin="0,4,0,0"
+                           Text="Tip: you can paste a whole address such as https://10.0.0.1:8443/admin into Host." />
+                <CheckBox x:Name="ForgetCertBox" Grid.Row="4" Grid.Column="1" Content="Forget the certificate I trusted for this device"
+                          ToolTip="You'll be asked again the next time the page shows a certificate Windows doesn't trust" />
             </Grid>
         </GroupBox>
 

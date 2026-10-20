@@ -172,7 +172,7 @@ public sealed class ImportReviewWindow : Window
         g.Margin = new Thickness(0, 0, 0, 4);
         var m = new Thickness(3, 0, 3, 0);
         var check = new CheckBox { IsChecked = true, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
-        var proto = new ComboBox { Margin = m, ItemsSource = new[] { "SSH", "RDP", "VNC" }, SelectedIndex = (int)c.Protocol };
+        var proto = new ComboBox { Margin = m, ItemsSource = new[] { "SSH", "RDP", "VNC", "Web" }, SelectedIndex = (int)c.Protocol };
         var name = new TextBox { Text = c.Name, Margin = m, VerticalContentAlignment = VerticalAlignment.Center };
         var host = new TextBox { Text = c.Host, Margin = m, VerticalContentAlignment = VerticalAlignment.Center };
         var port = new TextBox { Text = c.Port > 0 ? c.Port.ToString() : "", Margin = m, VerticalContentAlignment = VerticalAlignment.Center };
@@ -202,7 +202,7 @@ public sealed class ImportReviewWindow : Window
         {
             UpdateFields();
             // Swap the port along with the protocol, unless it was set to something custom.
-            if (port.Text is "22" or "3389" or "5900" or "") port.Text = ConnectionImport.DefaultPort((Protocol)Math.Max(0, proto.SelectedIndex)).ToString();
+            if (port.Text is "22" or "3389" or "5900" or "443" or "") port.Text = ConnectionImport.DefaultPort((Protocol)Math.Max(0, proto.SelectedIndex)).ToString();
         }
         proto.SelectionChanged += (_, _) => ProtoChanged();
         UpdateFields();

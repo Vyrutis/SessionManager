@@ -43,7 +43,9 @@ public partial class MainWindow : Window
         _themeApply.Tick += (_, _) => { _themeApply.Stop(); ApplyPendingTheme(); };
         _initializing = false;
 
-        Tree.ItemsSource = _store.Data.Roots;
+        InitListTabs();
+        InitReachability();
+        InitQuickList();
         TabStrip.ItemsSource = _tabs;
         TabStrip.Visibility = Visibility.Collapsed;
         _tabs.CollectionChanged += (_, _) =>
@@ -208,6 +210,7 @@ public partial class MainWindow : Window
     {
         try { _store.Save(); }
         catch (Exception ex) { Error("Could not save sessions", ex); }
+        UpdateListTabs();
     }
 
     private void Error(string what, Exception ex) =>
@@ -294,6 +297,11 @@ public partial class MainWindow : Window
             SavePasswordTo = saveTo,
             Jump = jump,
         });
+        if (node.Parent != null)
+        {
+            node.LastUsed = DateTime.Now;
+            Save();
+        }
     }
 
     /// <summary>Login details of a saved SSH session (used for jump hosts).</summary>
@@ -321,9 +329,17 @@ public partial class MainWindow : Window
             view = terminal;
         }
         else if (node.Protocol == Protocol.Vnc) view = new VncView(request, AskPassword);
+        else if (node.Protocol == Protocol.Web) view = new WebSessionView(request, fingerprint =>
+        {
+            // Remember the certificate the user trusted for this device (quick-connect pages only for this tab).
+            if (node.Parent == null || node.Settings == null) return;
+            node.Settings.TrustedCertificate = fingerprint;
+            Save();
+        });
         else view = new RdpView(request, AskPassword);
 
         var tab = new OpenTab(node, request, view);
+        view.StatusChanged += status => { if (status == TabStatus.Connected && node.Parent != null) MarkConnected(node); };
         view.Element.Visibility = Visibility.Collapsed;
         TabHost.Children.Add(view.Element);
         _tabs.Add(tab);
@@ -410,28 +426,47 @@ public partial class MainWindow : Window
 
     // ───────────── Quick connect ─────────────
 
-    private void QuickBox_TextChanged(object sender, TextChangedEventArgs e) =>
+    private void QuickBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
         QuickHint.Visibility = QuickBox.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (QuickBox.IsKeyboardFocused) UpdateQuickList();
+    }
 
     private void QuickBox_KeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Enter)
         {
-            if (QuickConnect(QuickBox.Text)) QuickBox.Clear();
+            // A session picked from the list with the arrow keys, otherwise the typed address.
+            if (QuickPopup.IsOpen && QuickList.SelectedItem is ListBoxItem { Tag: Node picked }) OpenFromQuickList(picked);
+            else if (QuickConnect(QuickBox.Text)) { QuickBox.Clear(); QuickPopup.IsOpen = false; }
             e.Handled = true;
         }
         else if (e.Key == Key.Escape)
         {
+            if (QuickPopup.IsOpen && QuickBox.Text.Length == 0) QuickPopup.IsOpen = false;
             QuickBox.Clear();
             e.Handled = true;
         }
     }
 
-    /// <summary>Parses "user@host:port" (SSH), "rdp://user@host:port" or "vnc://host:display" and opens a tab without saving a session.</summary>
+    /// <summary>Parses "user@host:port" (SSH), "rdp://user@host:port", "vnc://host:display" or "https://address" and opens a tab without saving a session.</summary>
     private bool QuickConnect(string input)
     {
         var text = input.Trim();
         if (text.Length == 0) return false;
+        if (text.StartsWith("https://", StringComparison.OrdinalIgnoreCase) || text.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!SessionSettings.TryParseWebUrl(text, out var https, out var webHost, out var webPort, out var path))
+            {
+                Info($"\"{text}\" is not a valid web address.");
+                return false;
+            }
+            var ws = _store.PresetFor(Protocol.Web);
+            (ws.WebHttps, ws.Host, ws.Port, ws.WebPath) = (https, webHost, webPort, path);
+            ws.TrustedCertificate = "";
+            OpenSession(new Node { Kind = NodeKind.Session, Protocol = Protocol.Web, Name = webHost, Settings = ws });
+            return true;
+        }
         var protocol = Protocol.Ssh;
         if (text.StartsWith("rdp://", StringComparison.OrdinalIgnoreCase)) { protocol = Protocol.Rdp; text = text[6..]; }
         else if (text.StartsWith("vnc://", StringComparison.OrdinalIgnoreCase))
@@ -480,7 +515,7 @@ public partial class MainWindow : Window
         }
         if (host.Length == 0)
         {
-            Info("Type a host to connect to, for example admin@10.0.0.5, rdp://server01 or vnc://10.0.0.7.");
+            Info("Type a host to connect to, for example admin@10.0.0.5, rdp://server01, vnc://10.0.0.7 or https://10.0.0.1.");
             return false;
         }
         settings.Host = host;
@@ -511,7 +546,7 @@ public partial class MainWindow : Window
             try { CredentialStore.Set(node.Id, tab.Request.Password, node.Settings.Username); }
             catch (Exception ex) { Error("Could not save the password", ex); }
         }
-        node.IsSelected = true;
+        Select(node);
         Save();
     }
 
@@ -565,6 +600,7 @@ public partial class MainWindow : Window
             menu.Items.Add(new Separator());
             menu.Items.Add(Item(terminal.ShowFiles ? "Hide files (SFTP)" : "Show files (SFTP)", "",
                 () => SetShowFiles(terminal, !terminal.ShowFiles), color: "FolderBrush"));
+            menu.Items.Add(CommandsMenu(tab, terminal));
             menu.Items.Add(Item("Find…", "", () => { terminal.ShowFind(); terminal.FocusView(); }, gesture: "Ctrl+Shift+F"));
             if (_multiExec)
                 menu.Items.Add(Item(tab.IncludeInBroadcast ? "Exclude from multi-exec" : "Include in multi-exec", "", () =>
@@ -604,6 +640,11 @@ public partial class MainWindow : Window
         if (ctrl && shift && e.Key == Key.W && SelectedTab is { } tab)
         {
             CloseTab(tab);
+            e.Handled = true;
+        }
+        else if (ctrl && !shift && e.Key == Key.N && !(Keyboard.FocusedElement is DependencyObject dn && IsInsideTab(dn)))
+        {
+            NewSession(_store.Data.ActiveTab);
             e.Handled = true;
         }
         else if (ctrl && e.Key == Key.Tab && _tabs.Count > 1)
@@ -656,161 +697,107 @@ public partial class MainWindow : Window
         }
     }
 
-    // ───────────── Tree: mouse, keyboard, drag and drop ─────────────
-
-    private static Node? NodeFrom(object source)
-    {
-        for (var d = source as DependencyObject; d != null; d = d is Visual or System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(d) : LogicalTreeHelper.GetParent(d))
-            if (d is TreeViewItem item) return item.DataContext as Node;
-        return null;
-    }
-
-    private void Tree_MouseDoubleClick(object sender, MouseButtonEventArgs e)
-    {
-        if (NodeFrom(e.OriginalSource) is { IsSession: true } node)
-        {
-            OpenSession(node);
-            e.Handled = true;
-        }
-    }
-
-    private void Tree_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        // Right-click selects the item under the mouse, so the context menu acts on it.
-        var node = NodeFrom(e.OriginalSource);
-        if (node != null) node.IsSelected = true;
-        else if (SelectedNode is { } sel) sel.IsSelected = false;
-    }
-
-    private void Tree_KeyDown(object sender, KeyEventArgs e)
-    {
-        if (SelectedNode is not { } node) return;
-        switch (e.Key)
-        {
-            case Key.Enter when node.IsSession: OpenSession(node); e.Handled = true; break;
-            case Key.F2 when !node.IsRoot: Rename(node); e.Handled = true; break;
-            case Key.Delete when !node.IsRoot: Delete(node); e.Handled = true; break;
-        }
-    }
-
-    private void Tree_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        _dragStart = e.GetPosition(Tree);
-        _dragCandidate = NodeFrom(e.OriginalSource);
-    }
-
-    private void Tree_PreviewMouseMove(object sender, MouseEventArgs e)
-    {
-        if (e.LeftButton != MouseButtonState.Pressed || _dragCandidate is not { IsRoot: false } node) return;
-        var pos = e.GetPosition(Tree);
-        if (Math.Abs(pos.X - _dragStart.X) < SystemParameters.MinimumHorizontalDragDistance &&
-            Math.Abs(pos.Y - _dragStart.Y) < SystemParameters.MinimumVerticalDragDistance) return;
-        _dragCandidate = null;
-        DragDrop.DoDragDrop(Tree, new DataObject(typeof(Node), node), DragDropEffects.Move);
-    }
-
-    private Node? DropTarget(DragEventArgs e, out Node? dragged)
-    {
-        dragged = e.Data.GetData(typeof(Node)) as Node;
-        var over = NodeFrom(e.OriginalSource);
-        if (dragged == null || over == null) return null;
-        var folder = over.IsFolder ? over : over.Parent;
-        if (folder == null || folder.Protocol != dragged.Protocol) return null;
-        if (folder == dragged || dragged.IsAncestorOf(folder) || folder == dragged.Parent) return null;
-        return folder;
-    }
-
-    private void Tree_DragOver(object sender, DragEventArgs e)
-    {
-        e.Effects = DropTarget(e, out _) != null ? DragDropEffects.Move : DragDropEffects.None;
-        e.Handled = true;
-    }
-
-    private void Tree_Drop(object sender, DragEventArgs e)
-    {
-        var folder = DropTarget(e, out var dragged);
-        if (folder == null || dragged == null) return;
-        _store.Remove(dragged);
-        _store.AddChild(folder, dragged);
-        dragged.IsSelected = true;
-        Save();
-    }
-
-    private void FilterBox_TextChanged(object sender, TextChangedEventArgs e)
-    {
-        var text = FilterBox.Text.Trim();
-        FilterHint.Visibility = FilterBox.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
-        foreach (var root in _store.Data.Roots)
-        {
-            ApplyFilter(root, text);
-            root.IsVisible = true;
-        }
-    }
-
-    private static bool ApplyFilter(Node node, string text)
-    {
-        bool selfMatch = text.Length == 0
-            || node.Name.Contains(text, StringComparison.CurrentCultureIgnoreCase)
-            || node.Subtitle.Contains(text, StringComparison.CurrentCultureIgnoreCase);
-        bool childMatch = false;
-        foreach (var c in node.Children)
-            childMatch |= ApplyFilter(c, selfMatch && node.IsFolder && !node.IsRoot ? "" : text);
-        node.IsVisible = selfMatch || childMatch;
-        if (text.Length > 0 && childMatch) node.IsExpanded = true;
-        return node.IsVisible;
-    }
-
     // ───────────── Context menu ─────────────
 
     private void Tree_ContextMenuOpening(object sender, ContextMenuEventArgs e)
     {
         var menu = Tree.ContextMenu!;
         menu.Items.Clear();
-        var node = SelectedNode;
+        var targets = Targets();
+        var node = targets.Count == 1 ? targets[0] : null;
+
+        if (targets.Count > 1)
+        {
+            // Several items picked with Ctrl/Shift+click.
+            var sessions = targets.Where(n => n.IsSession).ToList();
+            if (sessions.Count > 0)
+            {
+                var connect = Item(sessions.Count == 1 ? "Execute" : $"Execute {sessions.Count} sessions", "",
+                    () => { foreach (var s in sessions) OpenSession(s); }, gesture: "Enter", color: "SshBrush");
+                connect.FontWeight = FontWeights.SemiBold;
+                menu.Items.Add(connect);
+            }
+            if (sessions.Count > 1)
+                menu.Items.Add(Item($"Edit {sessions.Count} sessions...", "\uE70F", () => EditMany(sessions), color: "RdpBrush"));
+            if (sessions.Count > 0)
+            {
+                bool allFavorite = sessions.All(n => n.IsFavorite);
+                menu.Items.Add(Item(allFavorite ? "Remove from favourites" : "Add to favourites", allFavorite ? "\uE735" : "\uE734",
+                    () => SetFavorite(sessions, !allFavorite), color: "FolderBrush"));
+            }
+            menu.Items.Add(Item("Export selected...", "", () => ExportNodes(Outermost(targets), full: false, "Export selected sessions", "Sessions"),
+                color: "RdpBrush"));
+            menu.Items.Add(new Separator());
+            menu.Items.Add(Item($"Delete {targets.Count} items", "", () => Delete(targets), gesture: "Del", color: "DangerBrush"));
+            menu.Items.Add(Item("Clear selection", "", ClearPicks, gesture: "Esc"));
+            return;
+        }
 
         if (node == null)
         {
-            menu.Items.Add(Item("New SSH session", "", () => NewSession(Protocol.Ssh), color: "SshBrush"));
-            menu.Items.Add(Item("New RDP session", "", () => NewSession(Protocol.Rdp), color: "RdpBrush"));
-            menu.Items.Add(Item("New VNC session", "", () => NewSession(Protocol.Vnc), color: "VncBrush"));
+            // Empty space: actions for the tab that is shown.
+            var root = ActiveRoot;
+            var p = root.Protocol;
+            menu.Items.Add(Item($"New {Kind(p)} session", "", () => NewSession(p), color: BrushFor(p)));
+            menu.Items.Add(Item($"New {Kind(p)} folder", "", () => NewFolder(root), color: "FolderBrush"));
             menu.Items.Add(new Separator());
-            menu.Items.Add(Item("New SSH folder", "", () => NewFolder(_store.SshRoot), color: "FolderBrush"));
-            menu.Items.Add(Item("New RDP folder", "", () => NewFolder(_store.RdpRoot), color: "FolderBrush"));
-            menu.Items.Add(Item("New VNC folder", "", () => NewFolder(_store.VncRoot), color: "FolderBrush"));
-            menu.Items.Add(new Separator());
-            menu.Items.Add(Item("Import session from file...", "", () => Import(null)));
+            menu.Items.Add(Item("Import session from file...", "", () => Import(root)));
             menu.Items.Add(Item("Import session list...", "", ImportListPicked, color: "SshBrush"));
-            menu.Items.Add(Item("Export all sessions...", "", () => ExportList(null), color: "RdpBrush"));
+            menu.Items.Add(Item($"Export all {Kind(p)} sessions...", "", () => ExportList(root), color: "RdpBrush"));
+            menu.Items.Add(Item("Export all sessions...", "", () => ExportList(null), color: "RdpBrush"));
+            if (root.Children.Count > 0)
+            {
+                menu.Items.Add(new Separator());
+                menu.Items.Add(Item("Select all", "", () => { ClearPicks(); foreach (var n in VisibleRows(root)) SetPicked(n, true); }, gesture: "Ctrl+A"));
+                if (root.Children.Any(c => c.IsFolder))
+                {
+                    menu.Items.Add(Item("Expand all", "", () => SetExpanded(root, true)));
+                    menu.Items.Add(Item("Collapse all", "", () => SetExpanded(root, false)));
+                }
+                menu.Items.Add(Item($"Delete all {Kind(p)} sessions...", "", () => Delete(root.Children.ToList()), color: "DangerBrush"));
+            }
+            menu.Items.Add(new Separator());
+            var sorted = Item("Keep sorted A to Z", "", () => SetSortedByName(_store.Data.ManualOrder));
+            sorted.IsCheckable = true;
+            sorted.IsChecked = !_store.Data.ManualOrder;
+            sorted.Icon = null;
+            sorted.ToolTip = "On: folders first, then sessions, by name. Off: the order you arrange by dragging (or Alt+Up / Alt+Down).";
+            menu.Items.Add(sorted);
             return;
         }
 
         if (node.IsSession)
         {
-            var execute = Item("Execute", "", () => OpenSession(node), gesture: "Enter", color: "SshBrush");
+            var execute = Item("Execute", "\uE768", () => OpenSession(node), gesture: "Enter", color: "SshBrush");
             execute.FontWeight = FontWeights.SemiBold;
             menu.Items.Add(execute);
-            if (node.Protocol != Protocol.Vnc) menu.Items.Add(Item("Connect as...", "", () => ConnectAs(node)));
-            menu.Items.Add(Item("Ping host", "", () => new PingWindow(this, node.Settings!.Host, node.Settings.Port).Show(), color: "RdpBrush"));
+            if (node.Protocol is Protocol.Ssh or Protocol.Rdp) menu.Items.Add(Item("Connect as...", "\uE77B", () => ConnectAs(node)));
             menu.Items.Add(new Separator());
-            menu.Items.Add(Item("Rename session", "", () => Rename(node), gesture: "F2"));
-            menu.Items.Add(Item("Edit session", "", () => EditSession(node), color: "RdpBrush"));
-            menu.Items.Add(Item("Change password...", "", () => ChangePassword(node), color: "FolderBrush"));
-            menu.Items.Add(Item("Delete session", "", () => Delete(node), gesture: "Del", color: "DangerBrush"));
-            menu.Items.Add(Item("Duplicate session", "", () => Duplicate(node)));
-            menu.Items.Add(Item("Save session to file", "", () => Export(node), color: "DangerBrush"));
-            menu.Items.Add(Item("Create a desktop shortcut", "", () => CreateShortcut(node), color: "FolderBrush"));
-            menu.Items.Add(Item("New folder", "", () => NewFolder(node.Parent!), color: "FolderBrush"));
+            menu.Items.Add(Item(node.IsFavorite ? "Remove from favourites" : "Add to favourites", node.IsFavorite ? "\uE735" : "\uE734",
+                () => SetFavorite(new[] { node }, !node.IsFavorite), color: "FolderBrush"));
+            menu.Items.Add(Item("Edit session", "\uE70F", () => EditSession(node), color: "RdpBrush"));
+            menu.Items.Add(Item("Rename session", "\uE8AC", () => Rename(node), gesture: "F2"));
+            menu.Items.Add(Item("Duplicate session", "\uE8C8", () => Duplicate(node)));
+            menu.Items.Add(Item("Change password...", "\uE8D7", () => ChangePassword(node), color: "FolderBrush"));
+            menu.Items.Add(Item("Delete session", "\uE74D", () => Delete(new List<Node> { node }), gesture: "Del", color: "DangerBrush"));
             menu.Items.Add(new Separator());
-            menu.Items.Add(Item("Save session settings as default presets", "", () => SaveAsPreset(node)));
-            menu.Items.Add(Item("Copy session settings", "", () => CopySettings(node), color: "RdpBrush"));
-            menu.Items.Add(Item("Paste session settings", "", () => PasteSettings(node), color: "RdpBrush",
+            menu.Items.Add(Item("Ping host", "\uE839", () => new PingWindow(this, node.Settings!.Host, node.Settings.Port).Show(), color: "RdpBrush"));
+            menu.Items.Add(Item("Wake up (Wake-on-LAN)...", "\uE7E8", () => WakeUp(node), color: "SshBrush"));
+            var more = Item("More", "\uE712", () => { });
+            more.Items.Add(Item("New folder here", "\uE8F4", () => NewFolder(node.Parent!), color: "FolderBrush"));
+            more.Items.Add(Item("Save session to file", "\uE74E", () => Export(node), color: "RdpBrush"));
+            more.Items.Add(Item("Create a desktop shortcut", "\uE71B", () => CreateShortcut(node), color: "FolderBrush"));
+            more.Items.Add(new Separator());
+            more.Items.Add(Item("Use these settings for new sessions", "\uE713", () => SaveAsPreset(node)));
+            more.Items.Add(Item("Copy session settings", "\uE8C8", () => CopySettings(node), color: "RdpBrush"));
+            more.Items.Add(Item("Paste session settings", "\uE77F", () => PasteSettings(node), color: "RdpBrush",
                 enabled: _copiedSettings != null && _copiedProtocol == node.Protocol));
+            menu.Items.Add(more);
         }
         else
         {
-            var kind = node.Protocol switch { Protocol.Ssh => "SSH", Protocol.Vnc => "VNC", _ => "RDP" };
-            menu.Items.Add(Item($"New {kind} session", node.Protocol == Protocol.Ssh ? "" : "", () => NewSession(node.Protocol),
-                color: node.Protocol switch { Protocol.Ssh => "SshBrush", Protocol.Vnc => "VncBrush", _ => "RdpBrush" }));
+            var kind = Kind(node.Protocol);
+            menu.Items.Add(Item($"New {kind} session", GlyphFor(node.Protocol), () => NewSession(node.Protocol), color: BrushFor(node.Protocol)));
             menu.Items.Add(Item("New folder", "", () => NewFolder(node), color: "FolderBrush"));
             menu.Items.Add(Item("Import session from file...", "", () => Import(node)));
             menu.Items.Add(Item(node.IsRoot ? $"Export all {kind} sessions..." : "Export folder...", "", () => ExportList(node), color: "RdpBrush"));
@@ -818,13 +805,15 @@ public partial class MainWindow : Window
             {
                 menu.Items.Add(new Separator());
                 menu.Items.Add(Item("Rename folder", "", () => Rename(node), gesture: "F2"));
-                menu.Items.Add(Item("Delete folder", "", () => Delete(node), gesture: "Del", color: "DangerBrush"));
+                menu.Items.Add(Item("Delete folder", "", () => Delete(new List<Node> { node }), gesture: "Del", color: "DangerBrush"));
             }
             if (node.Children.Count > 0)
             {
                 menu.Items.Add(new Separator());
                 menu.Items.Add(Item("Expand all", "", () => SetExpanded(node, true)));
                 menu.Items.Add(Item("Collapse all", "", () => SetExpanded(node, false)));
+                if (_store.Data.ManualOrder)
+                    menu.Items.Add(Item("Sort this folder A to Z", "", () => { SessionStore.Sort(node); Save(); }));
             }
         }
     }
@@ -866,11 +855,33 @@ public partial class MainWindow : Window
     private void NewSsh_Click(object sender, RoutedEventArgs e) => NewSession(Protocol.Ssh);
     private void NewRdp_Click(object sender, RoutedEventArgs e) => NewSession(Protocol.Rdp);
     private void NewVnc_Click(object sender, RoutedEventArgs e) => NewSession(Protocol.Vnc);
+    private void NewWeb_Click(object sender, RoutedEventArgs e) => NewSession(Protocol.Web);
+
+    /// <summary>The toolbar's New menu: a session of each kind (the shown tab's kind first) and a folder.</summary>
+    private void New_Click(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu { PlacementTarget = (UIElement)sender, Placement = PlacementMode.Bottom };
+        var active = _store.Data.ActiveTab;
+        foreach (var p in Enum.GetValues<Protocol>().OrderBy(p => p == active ? 0 : 1))
+        {
+            var item = Item(p switch
+            {
+                Protocol.Ssh => "SSH session",
+                Protocol.Rdp => "Remote Desktop session",
+                Protocol.Vnc => "VNC session",
+                _ => "Web session (device web page)",
+            }, GlyphFor(p), () => NewSession(p), gesture: p == active ? "Ctrl+N" : null, color: BrushFor(p));
+            menu.Items.Add(item);
+        }
+        menu.Items.Add(new Separator());
+        menu.Items.Add(Item("Folder", "\uE8F4", () => NewFolder_Click(sender, e), color: "FolderBrush"));
+        menu.IsOpen = true;
+    }
 
     private void NewFolder_Click(object sender, RoutedEventArgs e)
     {
         var n = SelectedNode;
-        NewFolder(n == null ? _store.SshRoot : n.IsFolder ? n : n.Parent!);
+        NewFolder(n == null ? ActiveRoot : n.IsFolder ? n : n.Parent!);
     }
 
     private void Credentials_Click(object sender, RoutedEventArgs e) =>
@@ -928,7 +939,37 @@ public partial class MainWindow : Window
         menu.Items.Add(Item("Scan picture or PDF for connections…", "\uE8B3", ScanFilePicked, color: "AccentBrush"));
         menu.Items.Add(Item("Scan screenshot from clipboard", "\uE77F", ScanClipboard, gesture: "Ctrl+Shift+V", color: "AccentBrush",
             enabled: ClipboardHasScannable()));
+        menu.Items.Add(new Separator());
+        menu.Items.Add(Item("Restore a backup\u2026", "\uE81C", RestoreBackup));
         menu.IsOpen = true;
+    }
+
+    /// <summary>Goes back to one of the daily copies of the session list.</summary>
+    private void RestoreBackup()
+    {
+        var backups = SessionBackup.List();
+        if (backups.Count == 0)
+        {
+            Info("There are no backups yet. A copy of your session list is kept each day you use the app.");
+            return;
+        }
+        if (Dialogs.PickBackup(this, backups) is not { } pick) return;
+        if (MessageBox.Show(this, $"Replace your current session list with the one from {pick.Date:dddd d MMMM}?\n\n" +
+                "Your current list is kept as a file in the data folder, so this can be undone.",
+                "Restore a backup", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) != MessageBoxResult.Yes) return;
+        _store.Restore(pick.Path);
+        ReloadList();
+        Info($"Restored the session list from {pick.Date:d}.");
+    }
+
+    /// <summary>Shows the store's list again after it was replaced as a whole.</summary>
+    private void ReloadList()
+    {
+        DomainPicker.Saved = _store.Data.Domains;
+        ClearPicks();
+        ShowTab(_store.Data.ActiveTab, save: false);
+        FilterBox_TextChanged(FilterBox, null!);
+        UpdateListTabs();
     }
 
     // ───────────── Importing connections from other tools / pictures ─────────────
@@ -1110,7 +1151,7 @@ public partial class MainWindow : Window
             last = node;
         }
 
-        if (last != null) last.IsSelected = true;
+        if (last != null) Select(last);
         Save();
         var msg = $"Added {added} connection{(added == 1 ? "" : "s")} from {source}.";
         if (profiles.Count > 0) msg += $"\n{profiles.Count} shared login{(profiles.Count == 1 ? "" : "s")} saved as credential profile{(profiles.Count == 1 ? "" : "s")}.";
@@ -1138,11 +1179,12 @@ public partial class MainWindow : Window
         var dlg = new SessionDialog(this, protocol, $"New {kind} session", "", _store.PresetFor(protocol), hasSavedPassword: false,
             _store.Data.Credentials, JumpHostChoices(null));
         if (dlg.ShowDialog() != true) return;
+        if (!ConfirmNotDuplicate(protocol, dlg.Settings, null)) return;
 
         var node = new Node { Kind = NodeKind.Session, Name = dlg.SessionName, Settings = dlg.Settings };
         _store.AddChild(folder, node);
         ApplyPassword(node, dlg);
-        node.IsSelected = true;
+        Select(node);
         Save();
     }
 
@@ -1151,10 +1193,14 @@ public partial class MainWindow : Window
         var dlg = new SessionDialog(this, node.Protocol, $"Edit session - {node.Name}", node.Name, node.Settings!, CredentialStore.Has(node.Id),
             _store.Data.Credentials, JumpHostChoices(node));
         if (dlg.ShowDialog() != true) return;
+        var before = node.Settings!;
+        bool moved = !before.Host.Equals(dlg.Settings.Host, StringComparison.OrdinalIgnoreCase) || before.Port != dlg.Settings.Port;
+        if (moved && FindDuplicate(node.Protocol, dlg.Settings, node) is { } dup &&
+            !AskDuplicate(this, $"\"{dup.Name}\" already connects to {dup.Subtitle}.\n\nKeep the change anyway?")) return;
         node.Name = dlg.SessionName;
         node.Settings = dlg.Settings;
         node.NotifySettingsChanged();
-        SessionStore.Sort(node.Parent!);
+        _store.Resort(node.Parent!);
         ApplyPassword(node, dlg);
         Save();
     }
@@ -1208,7 +1254,7 @@ public partial class MainWindow : Window
         if (name == null) return;
         var folder = new Node { Kind = NodeKind.Folder, Name = name, IsExpanded = true };
         _store.AddChild(parent, folder);
-        folder.IsSelected = true;
+        Select(folder);
         Save();
     }
 
@@ -1218,38 +1264,57 @@ public partial class MainWindow : Window
         var name = Dialogs.PromptText(this, $"Rename {what}", "New name:", node.Name);
         if (name == null || name == node.Name) return;
         node.Name = name;
-        SessionStore.Sort(node.Parent!);
+        _store.Resort(node.Parent!);
         Save();
     }
 
-    private void Delete(Node node)
+    /// <summary>Deletes sessions and folders (with everything in them) after asking once.</summary>
+    private void Delete(List<Node> nodes)
     {
+        nodes = Outermost(nodes.Where(n => !n.IsRoot).ToList());
+        if (nodes.Count == 0) return;
+        var deleted = nodes.SelectMany(n => n.Descendants().Prepend(n)).Where(n => n.IsSession).ToList();
         string question;
-        if (node.IsSession) question = $"Delete the session \"{node.Name}\"?";
-        else
+        if (nodes.Count == 1)
         {
-            int count = node.Descendants().Count(n => n.IsSession);
-            question = count == 0
-                ? $"Delete the folder \"{node.Name}\"?"
+            var node = nodes[0];
+            int count = deleted.Count;
+            question = node.IsSession ? $"Delete the session \"{node.Name}\"?"
+                : count == 0 ? $"Delete the folder \"{node.Name}\"?"
                 : $"Delete the folder \"{node.Name}\" and the {count} session{(count == 1 ? "" : "s")} in it?";
         }
-        var deleted = node.Descendants().Prepend(node).Where(n => n.IsSession).ToList();
+        else
+        {
+            int folders = nodes.Count(n => n.IsFolder);
+            int sessions = nodes.Count(n => n.IsSession);
+            int inside = deleted.Count - sessions;
+            var parts = new List<string>();
+            if (sessions > 0) parts.Add($"{sessions} session{(sessions == 1 ? "" : "s")}");
+            if (folders > 0) parts.Add($"{folders} folder{(folders == 1 ? "" : "s")}" +
+                                       (inside > 0 ? $" (with {inside} session{(inside == 1 ? "" : "s")} in them)" : ""));
+            question = $"Delete {string.Join(" and ", parts)}?\n\n" +
+                       string.Join("\n", nodes.Take(12).Select(n => "  " + n.Name)) + (nodes.Count > 12 ? $"\n  … and {nodes.Count - 12} more" : "");
+        }
         var deletedIds = deleted.Select(n => n.Id).ToHashSet();
         var dependents = _store.Data.Roots.SelectMany(r => r.Descendants())
             .Where(n => n.Settings?.JumpHostId is Guid j && deletedIds.Contains(j) && !deletedIds.Contains(n.Id))
             .ToList();
         if (dependents.Count > 0)
-            question += $"\n\n{dependents.Count} other session{(dependents.Count == 1 ? " uses" : "s use")} it as a jump host / SSH gateway " +
-                        "and will connect directly afterwards.";
-        if (MessageBox.Show(this, question + "\n\nSaved passwords are removed too.", "Delete", MessageBoxButton.YesNo,
-                MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes) return;
+            question += $"\n\n{dependents.Count} other session{(dependents.Count == 1 ? " uses" : "s use")} " +
+                        $"{(deleted.Count == 1 ? "it" : "one of them")} as a jump host / SSH gateway and will connect directly afterwards.";
+        if (!AskDelete(this, question + "\n\nSaved passwords are removed too.")) return;
 
         foreach (var s in deleted)
         {
             try { CredentialStore.Delete(s.Id); } catch { /* already gone */ }
         }
         foreach (var d in dependents) d.Settings!.JumpHostId = null;
-        _store.Remove(node);
+        ClearPicks();
+        foreach (var n in nodes)
+        {
+            n.IsSelected = false;
+            _store.Remove(n);
+        }
         Save();
     }
 
@@ -1259,7 +1324,7 @@ public partial class MainWindow : Window
         _store.AddChild(node.Parent!, copy);
         var password = CredentialStore.Get(node.Id);
         if (password != null) CredentialStore.Set(copy.Id, password, copy.Settings.Username);
-        copy.IsSelected = true;
+        Select(copy);
         Save();
     }
 
@@ -1355,7 +1420,7 @@ public partial class MainWindow : Window
         }
         if (last != null)
         {
-            last.IsSelected = true;
+            Select(last);
             Save();
         }
     }
@@ -1366,6 +1431,14 @@ public partial class MainWindow : Window
         List<Node> items = folder == null ? _store.Data.Roots.SelectMany(r => r.Children).ToList()
             : folder.IsRoot ? folder.Children.ToList()
             : new List<Node> { folder };
+        ExportNodes(items, full: folder == null,
+            folder == null ? "Export all sessions" : $"Export \"{folder.Name}\"",
+            folder == null ? "Sessions" : folder.Name);
+    }
+
+    /// <summary>Saves these items to a .smlist file; a full export also takes every profile and the presets.</summary>
+    private void ExportNodes(List<Node> items, bool full, string title, string baseName)
+    {
         var sessions = SessionList.AllNodes(items).Where(n => n.IsSession).ToList();
         if (sessions.Count == 0)
         {
@@ -1375,14 +1448,13 @@ public partial class MainWindow : Window
 
         // A full export takes every profile; a partial one only the profiles its sessions use.
         var used = sessions.Select(s => s.Settings?.CredentialId).OfType<Guid>().ToHashSet();
-        var profiles = _store.Data.Credentials.Where(c => folder == null || used.Contains(c.Id)).ToList();
+        var profiles = _store.Data.Credentials.Where(c => full || used.Contains(c.Id)).ToList();
 
         var date = DateTime.Now.ToString("yyyy-MM-dd");
-        var baseName = folder == null ? "Sessions" : folder.Name;
         var safeName = string.Concat($"{baseName} {date}".Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
         var dlg = new SaveFileDialog
         {
-            Title = folder == null ? "Export all sessions" : $"Export \"{folder.Name}\"",
+            Title = title,
             FileName = safeName,
             Filter = "Session Manager session list (*.smlist)|*.smlist",
             DefaultExt = SessionList.Extension,
@@ -1408,7 +1480,7 @@ public partial class MainWindow : Window
             }
         }
 
-        var model = SessionList.Build(items, profiles, folder == null ? _store.Data.Presets : null,
+        var model = SessionList.Build(items, profiles, full ? _store.Data.Presets : null,
             passphrase != null ? passwords : null, passphrase);
         passwords.Clear();
         SessionList.Write(dlg.FileName, model);
@@ -1510,7 +1582,7 @@ public partial class MainWindow : Window
             }
 
             FilterBox_TextChanged(FilterBox, null!);
-            if (result.AddedSessions.FirstOrDefault() is { } first) first.IsSelected = true;
+            if (result.AddedSessions.FirstOrDefault() is { } first) Select(first);
             Save();
             Info($"Imported {result.Added} session{(result.Added == 1 ? "" : "s")}" +
                  (result.Folders > 0 ? $" and {result.Folders} new folder{(result.Folders == 1 ? "" : "s")}" : "") + "." +
@@ -1553,7 +1625,7 @@ public partial class MainWindow : Window
         preset.Host = "";
         _store.Data.Presets[node.Protocol] = preset;
         Save();
-        var kind = node.Protocol switch { Protocol.Ssh => "SSH", Protocol.Vnc => "VNC", _ => "RDP" };
+        var kind = Kind(node.Protocol);
         Info($"New {kind} sessions will start with the settings of \"{node.Name}\" (everything except the host).");
     }
 

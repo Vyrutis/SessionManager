@@ -5,9 +5,12 @@ using System.Text.Json.Serialization;
 
 namespace SessionManager;
 
-public enum Protocol { Ssh, Rdp, Vnc }
+public enum Protocol { Ssh, Rdp, Vnc, Web }
 
 public enum NodeKind { Folder, Session }
+
+/// <summary>Whether a session's host answered on its port the last time it was checked.</summary>
+public enum Reachability { Unknown, Online, Offline }
 
 /// <summary>Connection settings for a session. Passwords are never stored here (see <see cref="CredentialStore"/>).</summary>
 public sealed class SessionSettings
@@ -45,6 +48,43 @@ public sealed class SessionSettings
     /// <summary>Watch only: keyboard and mouse are not sent.</summary>
     public bool ViewOnly { get; set; }
 
+    // Web (a device's web page, e.g. a router or switch)
+    /// <summary>https (true) or http.</summary>
+    public bool WebHttps { get; set; } = true;
+    /// <summary>Page to open, e.g. "/admin"; empty = the start page.</summary>
+    public string WebPath { get; set; } = "";
+    /// <summary>SHA-256 fingerprint of a certificate the user chose to trust for this device (self-signed etc.); empty = none.</summary>
+    public string TrustedCertificate { get; set; } = "";
+
+    /// <summary>Network card address for Wake-on-LAN, e.g. "AA:BB:CC:DD:EE:FF"; empty = not set.</summary>
+    public string MacAddress { get; set; } = "";
+
+    /// <summary>The address of a web session, e.g. https://10.0.0.1:8443/admin.</summary>
+    public string WebUrl(string? host = null, int? port = null)
+    {
+        host ??= Host;
+        int p = port ?? Port;
+        if (host.Contains(':') && !host.StartsWith('[')) host = $"[{host}]"; // IPv6
+        bool defaultPort = p == (WebHttps ? 443 : 80);
+        var path = string.IsNullOrEmpty(WebPath) ? "/" : WebPath.StartsWith('/') ? WebPath : "/" + WebPath;
+        return $"{(WebHttps ? "https" : "http")}://{host}{(defaultPort ? "" : ":" + p)}{path}";
+    }
+
+    /// <summary>Reads "https://host:port/path", "http://host" or just "host"; false when it isn't a usable address.</summary>
+    public static bool TryParseWebUrl(string text, out bool https, out string host, out int port, out string path)
+    {
+        https = true; host = ""; port = 443; path = "";
+        text = text.Trim();
+        if (text.Length == 0) return false;
+        if (!text.Contains("://")) text = "https://" + text;
+        if (!Uri.TryCreate(text, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https") || uri.Host.Length == 0) return false;
+        https = uri.Scheme == "https";
+        host = uri.Host.Trim('[', ']');
+        port = uri.Port;
+        path = uri.PathAndQuery == "/" ? "" : uri.PathAndQuery + uri.Fragment;
+        return true;
+    }
+
     public SessionSettings Clone()
     {
         var c = (SessionSettings)MemberwiseClone();
@@ -56,10 +96,11 @@ public sealed class SessionSettings
     {
         Protocol.Ssh => new() { Port = 22 },
         Protocol.Vnc => new() { Port = 5900, SmartSizing = true },
+        Protocol.Web => new() { Port = 443 },
         _ => new() { Port = 3389 },
     };
 
-    public static int DefaultPort(Protocol p) => p switch { Protocol.Ssh => 22, Protocol.Vnc => 5900, _ => 3389 };
+    public static int DefaultPort(Protocol p) => p switch { Protocol.Ssh => 22, Protocol.Vnc => 5900, Protocol.Web => 443, _ => 3389 };
 }
 
 /// <summary>A folder or a session in the tree.</summary>
@@ -95,6 +136,46 @@ public sealed class Node : INotifyPropertyChanged
         set { _isSelected = value; OnChanged(); }
     }
 
+    private bool _isPicked;
+
+    /// <summary>Part of a multiple selection (Ctrl/Shift+click).</summary>
+    [JsonIgnore]
+    public bool IsPicked
+    {
+        get => _isPicked;
+        set { if (_isPicked == value) return; _isPicked = value; OnChanged(); }
+    }
+
+    private bool _isFavorite;
+
+    /// <summary>Marked with a star; the filter box can show only these.</summary>
+    public bool IsFavorite
+    {
+        get => _isFavorite;
+        set { if (_isFavorite == value) return; _isFavorite = value; OnChanged(); }
+    }
+
+    /// <summary>When the session was last opened (for the recent list in quick connect).</summary>
+    public DateTime? LastUsed { get; set; }
+
+    private Reachability _reach;
+    private string _reachText = "";
+
+    [JsonIgnore]
+    public Reachability Reach
+    {
+        get => _reach;
+        set { if (_reach == value) return; _reach = value; OnChanged(); }
+    }
+
+    /// <summary>"Online: port 22 answered in 12 ms" etc., for the tooltip.</summary>
+    [JsonIgnore]
+    public string ReachText
+    {
+        get => _reachText;
+        set { if (_reachText == value) return; _reachText = value; OnChanged(); }
+    }
+
     private bool _isVisible = true;
 
     /// <summary>False when hidden by the filter box.</summary>
@@ -112,7 +193,7 @@ public sealed class Node : INotifyPropertyChanged
     [JsonIgnore]
     public string Glyph => IsFolder && !IsRoot
         ? "\uE8B7" // folder
-        : (Protocol == Protocol.Ssh ? "\uE756" : "\uE7F4"); // command prompt / monitor
+        : Protocol switch { Protocol.Ssh => "\uE756", Protocol.Web => "\uE774", _ => "\uE7F4" }; // command prompt / globe / monitor
 
     [JsonIgnore]
     public string Subtitle
@@ -121,6 +202,7 @@ public sealed class Node : INotifyPropertyChanged
         {
             if (Settings == null) return "";
             var s = Settings;
+            if (Protocol == Protocol.Web) return s.WebUrl().TrimEnd('/');
             var user = string.IsNullOrEmpty(s.Username) ? "" : s.Username + "@";
             var port = s.Port == SessionSettings.DefaultPort(Protocol) ? "" : ":" + s.Port;
             return $"{user}{s.Host}{port}";
@@ -150,6 +232,15 @@ public sealed class Node : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
 
+/// <summary>A command for SSH terminals, sent from the tab's menu.</summary>
+public sealed class SavedCommand
+{
+    public string Name { get; set; } = "";
+    public string Text { get; set; } = "";
+    /// <summary>Press Enter after the text (run it); off = only type it.</summary>
+    public bool Run { get; set; } = true;
+}
+
 /// <summary>A username/password shared by several sessions. The password is in Credential Manager under <see cref="Id"/>.</summary>
 public sealed class CredentialProfile
 {
@@ -173,6 +264,16 @@ public sealed class AppData
     public UiSettings Ui { get; set; } = new();
     /// <summary>Domains offered in the domain drop-down before the username, e.g. "CORP".</summary>
     public List<string> Domains { get; set; } = new();
+    /// <summary>The SSH / RDP / VNC tab shown above the session list.</summary>
+    public Protocol ActiveTab { get; set; }
+    /// <summary>Tabs the user has hidden; at least one tab always stays visible.</summary>
+    public List<Protocol> HiddenTabs { get; set; } = new();
+    /// <summary>True once the user has arranged the list by dragging; false = folders first, then sessions, A to Z.</summary>
+    public bool ManualOrder { get; set; }
+    /// <summary>Green / red dots on sessions whose host answers / doesn't answer (checked about once a minute).</summary>
+    public bool ShowStatus { get; set; } = true;
+    /// <summary>SSH commands that can be sent to a terminal (and to all terminals with multi-exec).</summary>
+    public List<SavedCommand> Commands { get; set; } = new();
 }
 
 public sealed class UiSettings
@@ -218,6 +319,6 @@ public sealed class UiSettings
 
 public static class ProtocolExtensions
 {
-    /// <summary>"SSH", "Remote Desktop" or "VNC".</summary>
-    public static string DisplayName(this Protocol p) => p switch { Protocol.Ssh => "SSH", Protocol.Vnc => "VNC", _ => "Remote Desktop" };
+    /// <summary>"SSH", "Remote Desktop", "VNC" or "Web".</summary>
+    public static string DisplayName(this Protocol p) => p switch { Protocol.Ssh => "SSH", Protocol.Vnc => "VNC", Protocol.Web => "Web", _ => "Remote Desktop" };
 }

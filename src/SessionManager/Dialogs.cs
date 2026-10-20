@@ -70,6 +70,309 @@ public static class Dialogs
         return (dd.Length > 0 ? dd : d.Domain, uu, p.Password);
     }
 
+    /// <summary>Username and password for a web page; <paramref name="offerSave"/> shows "Save password". Returns null if cancelled.</summary>
+    public static (string User, string Password, bool Save)? PromptLogin(Window? owner, string title, string label, string user, bool offerSave)
+    {
+        var u = new TextBox { Text = user, MinWidth = 320, Padding = new Thickness(3, 2, 3, 2) };
+        var p = new PasswordBox { MinWidth = 320 };
+        var save = new CheckBox { Content = "Save in Windows Credential Manager", IsChecked = true, Margin = new Thickness(0, 8, 0, 0),
+            Visibility = offerSave ? Visibility.Visible : Visibility.Collapsed };
+        var panel = new StackPanel();
+        panel.Children.Add(new TextBlock { Text = "Username:", Margin = new Thickness(0, 0, 0, 4) });
+        panel.Children.Add(u);
+        panel.Children.Add(new TextBlock { Text = "Password:", Margin = new Thickness(0, 8, 0, 4) });
+        panel.Children.Add(p);
+        panel.Children.Add(save);
+        var dlg = Build(owner, title, label, panel, null, out _);
+        u.Loaded += (_, _) => { if (u.Text.Length == 0) u.Focus(); else p.Focus(); };
+        if (dlg.ShowDialog() != true) return null;
+        return (u.Text.Trim(), p.Password, offerSave && save.IsChecked == true);
+    }
+
+    /// <summary>
+    /// A web page's certificate isn't trusted by Windows (self-signed, wrong name, expired). Shows who it was issued to and
+    /// its fingerprint; true = trust it. <paramref name="changedFrom"/> is the fingerprint trusted before, when it changed.
+    /// </summary>
+    public static bool TrustCertificate(Window? owner, string host, System.Security.Cryptography.X509Certificates.X509Certificate2 cert,
+        string problem, string fingerprint, string? changedFrom)
+    {
+        var grid = new Grid { Margin = new Thickness(0, 4, 0, 0) };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        void Row(string label, string value, bool mono = false)
+        {
+            int r = grid.RowDefinitions.Count;
+            grid.RowDefinitions.Add(new RowDefinition());
+            var l = new TextBlock { Text = label, Margin = new Thickness(0, 2, 12, 2) };
+            l.SetResourceReference(TextBlock.ForegroundProperty, "SubTextBrush");
+            var v = new TextBox
+            {
+                Text = value, IsReadOnly = true, BorderThickness = new Thickness(0), Background = System.Windows.Media.Brushes.Transparent,
+                TextWrapping = TextWrapping.Wrap, MaxWidth = 380, Margin = new Thickness(0, 2, 0, 2),
+            };
+            v.SetResourceReference(Control.ForegroundProperty, "TextBrush");
+            if (mono) { v.FontFamily = new System.Windows.Media.FontFamily("Cascadia Mono, Consolas"); v.FontSize = 11.5; }
+            Grid.SetRow(l, r);
+            Grid.SetRow(v, r);
+            Grid.SetColumn(v, 1);
+            grid.Children.Add(l);
+            grid.Children.Add(v);
+        }
+        Row("Issued to:", cert.GetNameInfo(System.Security.Cryptography.X509Certificates.X509NameType.SimpleName, false) is { Length: > 0 } n ? n : cert.Subject);
+        Row("Issued by:", cert.Issuer == cert.Subject ? "itself (self-signed)" : cert.GetNameInfo(System.Security.Cryptography.X509Certificates.X509NameType.SimpleName, true));
+        Row("Valid:", $"{cert.NotBefore:d} to {cert.NotAfter:d}" + (cert.NotAfter < DateTime.Now ? "  (expired)" : ""));
+        Row("SHA-256:", CertificateFingerprint.Format(fingerprint), mono: true);
+
+        var panel = new StackPanel();
+        if (changedFrom != null)
+        {
+            var warn = new TextBlock
+            {
+                TextWrapping = TextWrapping.Wrap, MaxWidth = 460, Margin = new Thickness(0, 0, 0, 8), FontWeight = FontWeights.SemiBold,
+                Text = "This certificate is different from the one you trusted before. That's expected after a firmware update or a " +
+                       "certificate renewal, but it can also mean someone is intercepting the connection. Only continue if you know why it changed.",
+            };
+            warn.SetResourceReference(TextBlock.ForegroundProperty, "DangerBrush");
+            panel.Children.Add(warn);
+        }
+        panel.Children.Add(grid);
+        var note = new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap, MaxWidth = 460, FontSize = 11, Margin = new Thickness(0, 10, 0, 0),
+            Text = "If you trust it, this exact certificate is remembered for this session. You'll be asked again if it ever changes.",
+        };
+        note.SetResourceReference(TextBlock.ForegroundProperty, "SubTextBrush");
+        panel.Children.Add(note);
+
+        var dlg = Build(owner, "Certificate not trusted", $"{host}: {problem}", panel, null, out var buttons);
+        var ok = (Button)buttons.Children[0];
+        ok.Content = "Trust this certificate";
+        ok.IsDefault = changedFrom == null;
+        ((Button)buttons.Children[1]).IsDefault = changedFrom != null;
+        return dlg.ShowDialog() == true;
+    }
+
+    /// <summary>Lists the daily backups (newest first); returns the one to restore, or null.</summary>
+    public static SessionBackup.Entry? PickBackup(Window owner, IReadOnlyList<SessionBackup.Entry> backups)
+    {
+        var list = new ListBox { Height = 260, MinWidth = 380 };
+        foreach (var b in backups)
+        {
+            var when = b.Date == DateTime.Today ? "Today" : b.Date == DateTime.Today.AddDays(-1) ? "Yesterday" : b.Date.ToString("dddd d MMMM yyyy");
+            var what = b.Sessions < 0 ? "can't be read" : $"{b.Sessions} session{(b.Sessions == 1 ? "" : "s")}, {b.Folders} folder{(b.Folders == 1 ? "" : "s")}";
+            list.Items.Add(new ListBoxItem { Content = $"{when}   —   {what}", Tag = b, IsEnabled = b.Sessions >= 0, Padding = new Thickness(4, 3, 4, 3) });
+        }
+        list.SelectedIndex = 0;
+        var note = new TextBlock
+        {
+            Text = "A copy of your session list is kept each day you use the app (the last 30 days). Saved passwords are not part of it; " +
+                   "they stay in Windows Credential Manager. Your current list is kept as a file before it's replaced.",
+            TextWrapping = TextWrapping.Wrap, MaxWidth = 420, FontSize = 11, Margin = new Thickness(0, 8, 0, 0),
+        };
+        note.SetResourceReference(TextBlock.ForegroundProperty, "SubTextBrush");
+        var panel = new StackPanel();
+        panel.Children.Add(list);
+        panel.Children.Add(note);
+        var dlg = Build(owner, "Restore a backup", "Choose the day to go back to:", panel, d => list.SelectedItem != null, out var buttons);
+        ((Button)buttons.Children[0]).Content = "Restore";
+        var open = new Button { Content = "Open backups folder", Padding = new Thickness(10, 3, 10, 3), Margin = new Thickness(0, 0, 8, 0) };
+        open.Click += (_, _) => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(SessionBackup.Folder) { UseShellExecute = true });
+        buttons.Children.Insert(0, open);
+        list.MouseDoubleClick += (_, _) => { if (list.SelectedItem != null) dlg.DialogResult = true; };
+        return dlg.ShowDialog() == true ? (list.SelectedItem as ListBoxItem)?.Tag as SessionBackup.Entry : null;
+    }
+
+    /// <summary>Wake-on-LAN: the network card address (pre-filled when known) and whether to connect once it's awake.</summary>
+    public static (string Mac, bool Connect)? WakeUp(Window owner, string name, string host, string mac, bool foundAutomatically)
+    {
+        var box = new TextBox { Text = mac, MinWidth = 320, Padding = new Thickness(3, 2, 3, 2), FontFamily = new System.Windows.Media.FontFamily("Cascadia Mono, Consolas") };
+        var hint = new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap, MaxWidth = 400, FontSize = 11, Margin = new Thickness(0, 4, 0, 0),
+            Text = foundAutomatically ? $"Found in this PC's network table for {host}. It's saved with the session."
+                : mac.Length > 0 ? "Saved with the session."
+                : "Network card address, e.g. AA:BB:CC:DD:EE:FF. On Windows, \"ipconfig /all\" shows it as Physical Address; it's saved with the session.",
+        };
+        hint.SetResourceReference(TextBlock.ForegroundProperty, "SubTextBrush");
+        var connect = new CheckBox { Content = "Connect as soon as it's awake (waits up to 3 minutes)", IsChecked = true, Margin = new Thickness(0, 10, 0, 0) };
+        var panel = new StackPanel();
+        panel.Children.Add(box);
+        panel.Children.Add(hint);
+        panel.Children.Add(connect);
+        var dlg = Build(owner, "Wake up", $"Wake up {name} with a Wake-on-LAN packet. Address of its network card:", panel, d =>
+        {
+            if (WakeOnLan.TryParseMac(box.Text, out _)) return true;
+            MessageBox.Show(d, "That isn't a network card address. It has 12 hexadecimal digits, e.g. AA:BB:CC:DD:EE:FF.", "Wake up");
+            return false;
+        }, out var buttons);
+        ((Button)buttons.Children[0]).Content = "Wake up";
+        box.Loaded += (_, _) => { box.Focus(); box.SelectAll(); };
+        return dlg.ShowDialog() == true ? (box.Text.Trim(), connect.IsChecked == true) : null;
+    }
+
+    /// <summary>What to change in several sessions at once; null fields stay as they are.</summary>
+    public sealed record BulkChange(bool SetProfile, CredentialProfile? Profile, string? Username, string? Password, int? Port, bool SetJump, Guid? Jump);
+
+    public static BulkChange? EditMany(Window owner, int count, Protocol protocol, IReadOnlyList<CredentialProfile> profiles, IReadOnlyList<(Guid Id, string Label)> jumpHosts)
+    {
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 300 });
+        CheckBox Row(string label, FrameworkElement field)
+        {
+            int r = grid.RowDefinitions.Count;
+            grid.RowDefinitions.Add(new RowDefinition());
+            var check = new CheckBox { Content = label, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 4, 12, 4) };
+            field.Margin = new Thickness(0, 3, 0, 3);
+            field.IsEnabled = false;
+            check.Checked += (_, _) => { field.IsEnabled = true; if (field is Control c) c.Focus(); };
+            check.Unchecked += (_, _) => field.IsEnabled = false;
+            Grid.SetRow(check, r);
+            Grid.SetRow(field, r);
+            Grid.SetColumn(field, 1);
+            grid.Children.Add(check);
+            grid.Children.Add(field);
+            return check;
+        }
+
+        var profileBox = new ComboBox();
+        profileBox.Items.Add(new ComboBoxItem { Content = "None (each session's own login)" });
+        foreach (var p in profiles.OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase))
+            profileBox.Items.Add(new ComboBoxItem { Content = $"{p.Name}  ({p.Username})", Tag = p });
+        profileBox.SelectedIndex = 0;
+        var userBox = new TextBox { Padding = new Thickness(3, 2, 3, 2) };
+        var passwordBox = new PasswordBox();
+        var portBox = new TextBox { Padding = new Thickness(3, 2, 3, 2), Width = 80, HorizontalAlignment = HorizontalAlignment.Left,
+            Text = protocol == Protocol.Web ? "443" : SessionSettings.DefaultPort(protocol).ToString() };
+        var jumpBox = new ComboBox();
+        jumpBox.Items.Add(new ComboBoxItem { Content = "None — connect directly" });
+        foreach (var (id, label) in jumpHosts) jumpBox.Items.Add(new ComboBoxItem { Content = label, Tag = id });
+        jumpBox.SelectedIndex = 0;
+
+        var useProfile = profiles.Count > 0 ? Row("Credential profile:", profileBox) : null;
+        var useUser = protocol != Protocol.Vnc ? Row("Username:", userBox) : null;
+        var usePassword = Row("Password:", passwordBox);
+        var usePort = Row("Port:", portBox);
+        var useJump = Row(protocol == Protocol.Ssh ? "Jump host:" : "SSH gateway:", jumpBox);
+
+        var note = new TextBlock
+        {
+            Text = "Only the ticked settings are changed. Passwords are saved in Windows Credential Manager for each session.",
+            TextWrapping = TextWrapping.Wrap, MaxWidth = 440, FontSize = 11, Margin = new Thickness(0, 8, 0, 0),
+        };
+        note.SetResourceReference(TextBlock.ForegroundProperty, "SubTextBrush");
+        var panel = new StackPanel();
+        panel.Children.Add(grid);
+        panel.Children.Add(note);
+
+        int? port = null;
+        var dlg = Build(owner, $"Edit {count} sessions", $"Change these settings in all {count} selected {protocol.DisplayName()} sessions:", panel, d =>
+        {
+            if (usePort.IsChecked == true)
+            {
+                if (!int.TryParse(portBox.Text.Trim(), out var p) || p is < 1 or > 65535)
+                {
+                    MessageBox.Show(d, "The port must be a number between 1 and 65535.", d.Title);
+                    return false;
+                }
+                port = p;
+            }
+            if (new[] { useProfile, useUser, usePassword, usePort, useJump }.All(c => c?.IsChecked != true))
+            {
+                MessageBox.Show(d, "Tick the settings to change.", d.Title);
+                return false;
+            }
+            return true;
+        }, out var buttons);
+        ((Button)buttons.Children[0]).Content = "Change";
+        if (dlg.ShowDialog() != true) return null;
+        return new BulkChange(
+            useProfile?.IsChecked == true, (profileBox.SelectedItem as ComboBoxItem)?.Tag as CredentialProfile,
+            useUser?.IsChecked == true ? userBox.Text.Trim() : null,
+            usePassword.IsChecked == true ? passwordBox.Password : null,
+            port,
+            useJump.IsChecked == true, (jumpBox.SelectedItem as ComboBoxItem)?.Tag as Guid?);
+    }
+
+    /// <summary>Adds or edits a saved SSH command; null = cancelled.</summary>
+    public static SavedCommand? EditCommand(Window owner, SavedCommand? existing)
+    {
+        var name = new TextBox { Text = existing?.Name ?? "", MinWidth = 380, Padding = new Thickness(3, 2, 3, 2) };
+        var text = new TextBox
+        {
+            Text = existing?.Text ?? "", AcceptsReturn = true, Height = 90, Padding = new Thickness(3, 2, 3, 2), TextWrapping = TextWrapping.NoWrap,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto, FontFamily = new System.Windows.Media.FontFamily("Cascadia Mono, Consolas"), FontSize = 12,
+        };
+        var run = new CheckBox { Content = "Run it (press Enter after the text)", IsChecked = existing?.Run ?? true, Margin = new Thickness(0, 8, 0, 0) };
+        var panel = new StackPanel();
+        panel.Children.Add(new TextBlock { Text = "Name (shown in the menu):", Margin = new Thickness(0, 0, 0, 4) });
+        panel.Children.Add(name);
+        panel.Children.Add(new TextBlock { Text = "Command (several lines are sent one after another):", Margin = new Thickness(0, 8, 0, 4) });
+        panel.Children.Add(text);
+        panel.Children.Add(run);
+        var dlg = Build(owner, existing == null ? "Save a command" : "Edit command", "Commands are sent from an SSH tab's menu (right-click the tab), " +
+            "to all included tabs when multi-exec is on.", panel, d =>
+        {
+            if (text.Text.Trim().Length > 0) return true;
+            MessageBox.Show(d, "Enter the command.", d.Title);
+            return false;
+        }, out _);
+        (existing == null ? (Control)text : name).Loaded += (s, _) => ((Control)s!).Focus();
+        if (dlg.ShowDialog() != true) return null;
+        var result = existing ?? new SavedCommand();
+        result.Name = name.Text.Trim();
+        result.Text = text.Text.TrimEnd('\r', '\n');
+        result.Run = run.IsChecked == true;
+        return result;
+    }
+
+    /// <summary>Edit, reorder or remove saved commands. Returns true if anything changed.</summary>
+    public static bool ManageCommands(Window owner, List<SavedCommand> commands)
+    {
+        bool changed = false;
+        var list = new ListBox { Height = 220, MinWidth = 420 };
+        void Fill(int select)
+        {
+            list.Items.Clear();
+            foreach (var c in commands) list.Items.Add(new ListBoxItem { Content = (c.Name.Length > 0 ? c.Name + "   —   " : "") + c.Text.Replace("\n", " ⏎ "), Tag = c, Padding = new Thickness(4, 3, 4, 3) });
+            list.SelectedIndex = Math.Min(select, commands.Count - 1);
+        }
+        Fill(0);
+        Button Btn(string text, Action click)
+        {
+            var b = new Button { Content = text, Padding = new Thickness(10, 3, 10, 3), Margin = new Thickness(0, 0, 0, 6), MinWidth = 90 };
+            b.Click += (_, _) => click();
+            return b;
+        }
+        SavedCommand? Selected() => (list.SelectedItem as ListBoxItem)?.Tag as SavedCommand;
+        var side = new StackPanel { Margin = new Thickness(8, 0, 0, 0) };
+        side.Children.Add(Btn("Add…", () => { if (EditCommand(owner, null) is { } c) { commands.Add(c); changed = true; Fill(commands.Count - 1); } }));
+        side.Children.Add(Btn("Edit…", () => { if (Selected() is { } c && EditCommand(owner, c) != null) { changed = true; Fill(commands.IndexOf(c)); } }));
+        side.Children.Add(Btn("Move up", () => Move(-1)));
+        side.Children.Add(Btn("Move down", () => Move(1)));
+        side.Children.Add(Btn("Remove", () => { if (Selected() is { } c) { int i = commands.IndexOf(c); commands.Remove(c); changed = true; Fill(i); } }));
+        void Move(int step)
+        {
+            if (Selected() is not { } c) return;
+            int i = commands.IndexOf(c), j = i + step;
+            if (j < 0 || j >= commands.Count) return;
+            commands.RemoveAt(i);
+            commands.Insert(j, c);
+            changed = true;
+            Fill(j);
+        }
+        list.MouseDoubleClick += (_, _) => { if (Selected() is { } c && EditCommand(owner, c) != null) { changed = true; Fill(commands.IndexOf(c)); } };
+        var row = new DockPanel();
+        DockPanel.SetDock(side, Dock.Right);
+        row.Children.Add(side);
+        row.Children.Add(list);
+        var dlg = Build(owner, "Saved commands", "Commands you can send from an SSH tab's menu:", row, null, out var buttons);
+        buttons.Children.RemoveAt(1); // only "Close"
+        ((Button)buttons.Children[0]).Content = "Close";
+        dlg.ShowDialog();
+        return changed;
+    }
+
     /// <summary>[domain ▾] \ [username] on one line.</summary>
     public static Grid UserRow(DomainPicker domain, TextBox user)
     {

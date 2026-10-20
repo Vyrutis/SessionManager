@@ -3,6 +3,15 @@ using System.Text.Json;
 using Renci.SshNet;
 using SessionManager;
 
+// Never the real %APPDATA%\SessionManager: the main test run gets its own data folder (child processes get theirs from the parent).
+// Must run before anything touches SessionStore, which reads the variable once.
+string? testData = null;
+if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SESSIONMANAGER_DATA")))
+{
+    testData = Path.Combine(Path.GetTempPath(), "sm-test-" + Guid.NewGuid().ToString("N")[..8]);
+    Environment.SetEnvironmentVariable("SESSIONMANAGER_DATA", testData);
+}
+
 int pass = 0, fail = 0;
 void Check(string name, bool ok, string detail = "")
 {
@@ -14,6 +23,22 @@ void Check(string name, bool ok, string detail = "")
 if (args.Contains("--vnc-wpf"))
 {
     VncViewTests.Run(Check);
+    Console.Out.Flush();
+    Thread.Sleep(Timeout.Infinite); // ended by the parent
+}
+// Child process for the WPF session list test (see SessionListTests.RunIsolated).
+if (args.Contains(SessionListTests.Flag))
+{
+    SessionListTests.Run(Check);
+    Console.WriteLine("DONE");
+    Console.Out.Flush();
+    Thread.Sleep(Timeout.Infinite); // ended by the parent
+}
+// Child process for the web session tab test (see WebViewTests.RunIsolated).
+if (args.Contains(WebViewTests.Flag))
+{
+    WebViewTests.Run(Check);
+    Console.WriteLine("DONE");
     Console.Out.Flush();
     Thread.Sleep(Timeout.Infinite); // ended by the parent
 }
@@ -175,9 +200,14 @@ File.WriteAllText(part, """{"Format":"SessionManager.Session"}""");
 Check("single-session file is not taken as a list", Throws<InvalidDataException>(() => SessionList.Read(part)) != null);
 
 ImportTests.Run(Check, dir);
+WebAndOrderTests.Run(Check, dir);
+await QolTests.Run(Check);
 VncViewTests.RunIsolated(Check);
+SessionListTests.RunIsolated(Check);
+WebViewTests.RunIsolated(Check);
 
 Directory.Delete(dir, true);
+if (testData != null) try { Directory.Delete(testData, true); } catch { /* a browser process may still hold files */ }
 Console.WriteLine($"\n{pass} passed, {fail} failed");
 return fail == 0 ? 0 : 1;
 

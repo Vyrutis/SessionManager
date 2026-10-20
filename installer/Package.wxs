@@ -7,7 +7,7 @@
            Compressed="yes">
 
     <!-- Installing a newer version replaces the old one; sessions and passwords (in %APPDATA% / Credential Manager) are kept. -->
-    <MajorUpgrade DowngradeErrorMessage="A newer version of Session Manager is already installed." />
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of Session Manager is already installed." />
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
 
     <Icon Id="AppIcon" SourceFile="$(var.IconPath)" />

@@ -47,6 +47,7 @@ public static class Theme
         ["SshBrush"]           = ("#2D7D46", "#4CC38A"),
         ["RdpBrush"]           = ("#0F6CBD", "#5B9BFF"),
         ["VncBrush"]           = ("#7A4FC4", "#B08CFF"),
+        ["WebBrush"]           = ("#B4570F", "#F2A65A"),
         ["FolderBrush"]        = ("#A07F00", "#E0B341"),
         ["DangerBrush"]        = ("#C42B1C", "#FF6B5E"),
         ["CloseHoverBrush"]    = ("#C42B1C", "#C42B1C"),
@@ -146,6 +147,7 @@ public static class Theme
         res[SystemColors.ControlBrushKey] = res["PanelBrush"]; // e.g. the corner between two scrollbars
 
         foreach (Window w in Application.Current.Windows) SetDarkTitleBar(w);
+        AppIcon.Update(dark, Ui);
         Changed?.Invoke();
     }
 
@@ -157,6 +159,7 @@ public static class Theme
     {
         w.SetResourceReference(Window.BackgroundProperty, "WindowBrush");
         w.SetResourceReference(Window.ForegroundProperty, "TextBrush");
+        w.Icon = AppIcon.Current;
         w.SourceInitialized += (_, _) => SetDarkTitleBar(w);
 
         if (scaleContent && w.Content is FrameworkElement content)
