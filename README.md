@@ -328,3 +328,7 @@ packaging/linux/             desktop entry, icons, file types, install.sh, build
 packaging/arch/              PKGBUILD that builds from this checkout
 packaging/arch-bin/          PKGBUILD for the prebuilt release tarball
 ```
+
+## License and author
+
+MIT License, see [LICENSE](LICENSE). Created by [Vyrutis](https://github.com/Vyrutis).

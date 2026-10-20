@@ -14,6 +14,8 @@
     <Product>Session Manager</Product>
     <Version>1.3.3</Version>
     <Company>Session Manager</Company>
+    <Authors>Vyrutis</Authors>
+    <Copyright>Copyright (c) 2026 Vyrutis</Copyright>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
   </PropertyGroup>
 
