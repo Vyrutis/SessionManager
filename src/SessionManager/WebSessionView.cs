@@ -21,7 +21,7 @@ public sealed class WebSessionView : Grid, ISessionView
     private readonly Border _toolbar;
     private readonly Button _back, _forward, _reload, _fill;
     private readonly TextBlock _lock = new() { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 4, 0) };
-    private readonly TextBox _address = new() { VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(4, 2, 4, 2), Margin = new Thickness(0, 0, 6, 0) };
+    private readonly TextBox _address = new() { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) };
     private readonly Border _overlay;
     private readonly TextBlock _overlayText = new() { FontSize = 15, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap };
     private readonly Button _retry = new() { Content = "Try again", Padding = new Thickness(16, 6, 16, 6), Margin = new Thickness(0, 16, 0, 0), HorizontalAlignment = HorizontalAlignment.Center };
@@ -360,7 +360,13 @@ public sealed class WebSessionView : Grid, ISessionView
     private (string User, string Password)? AskLogin(string label)
     {
         var s = _request.Settings;
-        var r = Dialogs.PromptLogin(Window.GetWindow(this), "Log in", label, s.Username, _request.SavePasswordTo != null);
+        (string User, string Password, bool Save)? r;
+        if (_authTried && _request.RetryLogin != null)
+        {
+            var retry = _request.RetryLogin(label, _request.SavePasswordTo != null);
+            r = retry == null ? null : (retry.Username ?? s.Username, retry.Password, retry.Save);
+        }
+        else r = Dialogs.PromptLogin(Window.GetWindow(this), "Log in", label, s.Username, _request.SavePasswordTo != null);
         if (r == null) return null;
         s.Username = r.Value.User;
         _request.Password = r.Value.Password;

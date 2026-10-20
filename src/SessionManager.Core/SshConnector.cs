@@ -35,7 +35,12 @@ public sealed class SshUi
     public required Func<HostKeyQuestion, bool> ConfirmHostKey { get; init; }
     /// <summary>Runs an action on the UI thread (for messages from background threads).</summary>
     public required Action<Action> Post { get; init; }
+    /// <summary>(message, offer saving) → what to try after a refused login; null = give up. When not set, a password prompt is shown.</summary>
+    public Func<string, bool, SshRetry?>? RetryLogin { get; init; }
 }
+
+/// <summary>A new login to try: a different user (null = keep the current one) and its password. Domain is for RDP.</summary>
+public sealed record SshRetry(string? Username, string Password, bool Save, string? Domain = null);
 
 /// <summary>Who to log in as. A password typed at a prompt is kept here (and saved when the user asks).</summary>
 public sealed class SshLogin
@@ -102,7 +107,20 @@ public static class SshConnector
                 client.Dispose();
                 ui.Log($"Authentication failed for {login.Role}{target}.", LogKind.Error);
                 if (attempt >= 4) throw;
-                if (!await Prompt(login, target, ui)) throw new OperationCanceledException("Cancelled.");
+                if (ui.RetryLogin != null)
+                {
+                    var retry = ui.RetryLogin($"Authentication failed for {login.Role}{target}.", login.SaveId != null);
+                    if (retry == null) throw new OperationCanceledException("Cancelled.");
+                    if (retry.Username != null) s.Username = retry.Username;
+                    login.Password = retry.Password;
+                    if (retry.Save && login.SaveId is Guid id)
+                    {
+                        try { CredentialStore.Set(id, retry.Password, s.Username); }
+                        catch (Exception ex) { ui.Log(ex.Message, LogKind.Warning); }
+                    }
+                    target = $"{(string.IsNullOrEmpty(s.Username) ? "" : s.Username + "@")}{s.Host}";
+                }
+                else if (!await Prompt(login, target, ui)) throw new OperationCanceledException("Cancelled.");
             }
             catch (SshConnectionException ex) when (ex.DisconnectReason == DisconnectReason.HostKeyNotVerifiable)
             {

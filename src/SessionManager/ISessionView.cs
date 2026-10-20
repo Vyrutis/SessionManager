@@ -27,6 +27,8 @@ public sealed class ConnectRequest
     public Guid? SavePasswordTo { get; init; }
     /// <summary>Jump host to connect through, if the session uses one.</summary>
     public SshLogin? Jump { get; init; }
+    /// <summary>Asked after a refused SSH login: another saved user or a typed password.</summary>
+    public Func<string, bool, SshRetry?>? RetryLogin { get; init; }
     /// <summary>Quick-connect sessions are not in the session list.</summary>
     public bool IsTransient => Session.Parent == null;
 }

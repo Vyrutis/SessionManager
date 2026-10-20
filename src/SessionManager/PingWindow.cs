@@ -21,7 +21,7 @@ public sealed class PingWindow : Window
         BorderThickness = new Thickness(0),
         Padding = new Thickness(8),
     };
-    private readonly Button _again = new() { Content = "Ping again", Padding = new Thickness(12, 3, 12, 3), IsEnabled = false };
+    private readonly Button _again = new() { Content = "Ping again", IsEnabled = false };
     private CancellationTokenSource _cts = new();
 
     public PingWindow(Window owner, string host, int port)
@@ -35,7 +35,7 @@ public sealed class PingWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Theme.ApplyTo(this);
 
-        var close = new Button { Content = "Close", IsCancel = true, Padding = new Thickness(12, 3, 12, 3), Margin = new Thickness(8, 0, 0, 0) };
+        var close = new Button { Content = "Close", IsCancel = true, Margin = new Thickness(8, 0, 0, 0) };
         close.Click += (_, _) => Close();
         _again.Click += (_, _) => _ = RunAsync();
 

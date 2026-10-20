@@ -14,10 +14,10 @@ There are two apps built from one code base:
 | Saved passwords | Windows Credential Manager | desktop keyring (GNOME Keyring, KWallet, KeePassXC) via Secret Service |
 | Screenshot / PDF scan | Windows text recognition | [Tesseract](https://github.com/tesseract-ocr/tesseract) + poppler |
 | Installer | `.msi` | Arch package (`PKGBUILD`) or tarball with `install.sh` |
-| Version in this branch | 1.3.1 | 1.4.0 |
-| Latest release download | [v1.3.1](../../releases/tag/v1.3.1) | [v1.2.0](../../releases/tag/v1.2.0) (no VNC yet) |
+| Version in this branch | 1.3.2 | 1.4.0 |
+| Latest release download | [v1.3.2](../../releases/tag/v1.3.2) | [v1.2.0](../../releases/tag/v1.2.0) (no VNC yet) |
 
-VNC is new in Windows 1.2.0 / Linux 1.3.0, and the SSH / RDP / VNC list tabs with multiple selection in Windows 1.3.0 / Linux 1.4.0. Windows 1.3.0 also adds web sessions, arranging the list by dragging, favourites, online dots, Wake-on-LAN, saved commands and daily backups, and 1.3.1 shows only the tab icons when the list is narrow. These Windows features are in the v1.3.1 release; the Linux ones are not released yet, so build those from source: [Windows](#build), [Arch](#install-on-arch-from-source-includes-vnc).
+VNC is new in Windows 1.2.0 / Linux 1.3.0, and the SSH / RDP / VNC list tabs with multiple selection in Windows 1.3.0 / Linux 1.4.0. Windows 1.3.0 also adds web sessions, arranging the list by dragging, favourites, online dots, Wake-on-LAN, saved commands and daily backups, 1.3.1 shows only the tab icons when the list is narrow, and 1.3.2 adds Connect as (pick a saved user), a More submenu in the session menu, a "Login failed" dialog that offers saved credentials or a typed password, and a cleaner, more consistent look. These Windows features are in the v1.3.2 release; the Linux ones are not released yet, so build those from source: [Windows](#build), [Arch](#install-on-arch-from-source-includes-vnc).
 
 Both use [SSH.NET](https://github.com/sshnet/SSH.NET) and .NET 10, and read and write the same session files, so a list exported on one runs on the other.
 

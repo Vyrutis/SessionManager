@@ -148,29 +148,32 @@ public partial class MainWindow
         Save();
     }
 
+    /// <summary>One line with a checkbox per tab; the last visible tab can't be unticked.</summary>
     private void AddTabChoices(ItemsControl menu)
     {
-        var hidden = _store.Data.HiddenTabs;
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        var label = new TextBlock { Text = "Tabs", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
+        label.SetResourceReference(TextBlock.ForegroundProperty, "SubTextBrush");
+        row.Children.Add(label);
+        var boxes = new List<(Protocol P, CheckBox Box)>();
+        void Refresh()
+        {
+            bool onlyOne = _store.Data.HiddenTabs.Count >= Enum.GetValues<Protocol>().Length - 1;
+            foreach (var (_, box) in boxes) box.IsEnabled = box.IsChecked != true || !onlyOne; // the last visible tab can't be hidden
+        }
         foreach (var p in Enum.GetValues<Protocol>())
         {
-            bool shown = !hidden.Contains(p);
-            var item = new MenuItem
-            {
-                Header = $"Show {Label(p)} tab",
-                IsCheckable = true,
-                IsChecked = shown,
-                StaysOpenOnClick = true,
-                IsEnabled = !shown || hidden.Count < Enum.GetValues<Protocol>().Length - 1, // the last visible tab can't be hidden
-            };
             var proto = p;
-            item.Click += (_, _) =>
-            {
-                SetTabHidden(proto, !item.IsChecked);
-                foreach (var other in menu.Items.OfType<MenuItem>().Where(m => m.IsCheckable))
-                    other.IsEnabled = !other.IsChecked || _store.Data.HiddenTabs.Count < Enum.GetValues<Protocol>().Length - 1;
-            };
-            menu.Items.Add(item);
+            var box = new CheckBox { Content = Label(p), IsChecked = !_store.Data.HiddenTabs.Contains(p), Margin = new Thickness(0, 0, 10, 0),
+                VerticalContentAlignment = VerticalAlignment.Center, ToolTip = $"Show the {Label(p)} tab" };
+            box.SetResourceReference(Control.ForegroundProperty, "TextBrush");
+            box.Click += (_, _) => { SetTabHidden(proto, box.IsChecked != true); Refresh(); };
+            boxes.Add((p, box));
+            row.Children.Add(box);
         }
+        Refresh();
+        // A plain row in the menu: clicking a checkbox keeps the menu open, and the row itself isn't highlighted or clickable.
+        menu.Items.Add(new MenuItem { Header = row, StaysOpenOnClick = true, Focusable = false, Name = "TabChoices" });
     }
 
     private void TabsMenu_Click(object sender, RoutedEventArgs e)
@@ -200,8 +203,6 @@ public partial class MainWindow
         menu.Items.Add(Item($"New {Kind(p)} session", "", () => NewSession(p), color: BrushFor(p)));
         menu.Items.Add(Item($"New {Kind(p)} folder", "", () => NewFolder(_store.RootFor(p)), color: "FolderBrush"));
         menu.Items.Add(new Separator());
-        menu.Items.Add(Item($"Hide {Label(p)} tab", "", () => SetTabHidden(p, true),
-            enabled: _store.Data.HiddenTabs.Count < Enum.GetValues<Protocol>().Length - 1));
         AddTabChoices(menu);
     }
 

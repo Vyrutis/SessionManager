@@ -338,9 +338,60 @@ static class SessionListTests
         var items = tree.ContextMenu!.Items.OfType<MenuItem>().ToList();
         var top = items.Select(m => m.Header?.ToString()).ToList();
         var more = items.FirstOrDefault(m => m.Header?.ToString() == "More");
-        check("session menu: favourite, wake up and a More submenu", top.Contains("Add to favourites") && top.Contains("Wake up (Wake-on-LAN)...")
-            && more != null && more.Items.OfType<MenuItem>().Any(m => m.Header?.ToString() == "Create a desktop shortcut")
-            && !top.Contains("Create a desktop shortcut") && top.Count <= 12, string.Join(" | ", top));
+        var moreHeaders = more?.Items.OfType<MenuItem>().Select(m => m.Header?.ToString()).ToList() ?? new();
+        check("session menu: everyday actions on top, the rest in More", top.Contains("Add to favourites") && top.Contains("Edit session") && top.Contains("Delete session")
+            && new[] { "Rename session", "Duplicate session", "Change password...", "Ping host", "Wake up (Wake-on-LAN)...", "Create a desktop shortcut" }.All(h => moreHeaders.Contains(h))
+            && !new[] { "Rename session", "Duplicate session", "Change password...", "Ping host", "Wake up (Wake-on-LAN)...", "Create a desktop shortcut" }.Any(top.Contains)
+            && top.Count <= 8, string.Join(" | ", top) + "  //  " + string.Join(" | ", moreHeaders));
+
+        // The More entry really opens its submenu (the menu template needs a popup for it), and checked items show a tick.
+        more!.ApplyTemplate();
+        var subPopup = more.Template.FindName("SubPopup", more) as System.Windows.Controls.Primitives.Popup;
+        check("More has a submenu popup with its entries", subPopup != null && more.Items.Count >= 5 && more.Template.FindName("Arrow", more) is TextBlock { Visibility: Visibility.Visible },
+            $"popup={subPopup != null} open={subPopup?.IsOpen} sub={more.IsSubmenuOpen} items={more.Items.Count} arrow={(more.Template.FindName("Arrow", more) as TextBlock)?.Visibility} role={more.Role}");
+        var tickItem = new MenuItem { Header = "x", IsCheckable = true, IsChecked = true };
+        tickItem.ApplyTemplate();
+        check("a checked menu item shows a tick", tickItem.Template.FindName("Tick", tickItem) is TextBlock { Visibility: Visibility.Visible });
+
+        // ── The tabs option is one row of checkboxes ──
+        var optionsMenu = new ContextMenu();
+        Call(w, "AddTabChoices", optionsMenu);
+        var tabRow = optionsMenu.Items.OfType<MenuItem>().Single();
+        var boxes = ((StackPanel)tabRow.Header).Children.OfType<CheckBox>().ToList();
+        check("tabs: one row with a checkbox per tab, all ticked", optionsMenu.Items.Count == 1 && boxes.Select(b => b.Content?.ToString()).SequenceEqual(new[] { "SSH", "RDP", "VNC", "Web" })
+            && boxes.All(b => b.IsChecked == true));
+        boxes[2].IsChecked = false; boxes[2].RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+        check("unticking a tab hides it", Get<RadioButton>(w, "VncTab").Visibility == Visibility.Collapsed && wStoreHidden());
+        boxes[2].IsChecked = true; boxes[2].RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+        check("ticking it shows it again", Get<RadioButton>(w, "VncTab").Visibility == Visibility.Visible);
+        bool wStoreHidden() => Get<SessionStore>(w, "_store").Data.HiddenTabs.Contains(Protocol.Vnc);
+
+        // ── Connect as a user from the credentials list ──
+        var wStore = Get<SessionStore>(w, "_store");
+        check("no saved credentials: Connect as is the one-time prompt", top.Contains("Connect as...") && !items.Any(m => m.Header?.ToString() == "Connect as"), string.Join(" | ", top));
+        var admin = new CredentialProfile { Name = "Admin", Username = "root", Domain = "" };
+        var corp = new CredentialProfile { Name = "Corp", Username = "svc", Domain = "CORP" };
+        wStore.Data.Credentials.AddRange(new[] { admin, corp });
+        Call(w, "Tree_ContextMenuOpening", tree, null);
+        var connectAs = tree.ContextMenu!.Items.OfType<MenuItem>().FirstOrDefault(m => m.Header?.ToString() == "Connect as");
+        var asHeaders = connectAs?.Items.OfType<MenuItem>().Select(m => m.Header?.ToString()).ToList() ?? new();
+        check("Connect as lists the credentials, then a one-time user", asHeaders.Count == 3 && asHeaders[0]!.StartsWith("Admin") && asHeaders[1]!.Contains(@"CORP\svc")
+            && asHeaders[2] == "Another user, this time only...", string.Join(" | ", asHeaders));
+        check("a session with its own login keeps Change password", tree.ContextMenu.Items.OfType<MenuItem>().First(m => m.Header?.ToString() == "More").Items.OfType<MenuItem>().Any(m => m.Header?.ToString() == "Change password..."));
+        Call(w, "AssignProfile", charlie, admin);
+        check("the chosen credential is assigned to the session", charlie.Settings!.CredentialId == admin.Id && charlie.Settings.Username == "root");
+        reloaded = new SessionStore();
+        reloaded.Load();
+        check("and saved", reloaded.SshRoot.Descendants().First(n => n.Name == "Charlie").Settings!.CredentialId == admin.Id);
+        Call(w, "Tree_ContextMenuOpening", tree, null);
+        var afterItems = tree.ContextMenu!.Items.OfType<MenuItem>().ToList();
+        check("a session using a credential has no Change password", !afterItems.First(m => m.Header?.ToString() == "More").Items.OfType<MenuItem>().Any(m => m.Header?.ToString() == "Change password..."),
+            string.Join(" | ", afterItems.Select(m => m.Header)));
+        check("the current credential is marked", afterItems.First(m => m.Header?.ToString() == "Connect as").Items.OfType<MenuItem>()
+            .First(m => m.Header!.ToString()!.StartsWith("Admin")).Icon is TextBlock { Text: "" });
+        charlie.Settings.CredentialId = null;
+        wStore.Data.Credentials.Clear();
+        wStore.Save();
 
         // ── Online dots ──
         typeof(MainWindow).GetField("Probe", Any)!.SetValue(null, (Func<string, int, CancellationToken, Task<(bool, int, string?)>>)((host, port, _) =>
@@ -411,7 +462,12 @@ static class SessionListTests
         // ── Window icon follows the main and accent colors ──
         bool dark = Theme.IsDark;
         var ui = Theme.Ui.Clone();
-        check("default colors use the icon built into the exe", w.Icon is BitmapFrame, w.Icon?.GetType().Name ?? "null");
+        check("default colors draw the icon from the theme", w.Icon is DrawingImage && ReferenceEquals(w.Icon, AppIcon.Current), w.Icon?.GetType().Name ?? "null");
+        var before = AppIcon.Current;
+        Theme.Apply(!dark, ui);
+        check("switching light/dark redraws the window icon", ReferenceEquals(w.Icon, AppIcon.Current) && !ReferenceEquals(w.Icon, before)
+            && Theme.Hex(Theme.Parse(Theme.DefaultMain(!dark))) != Theme.Hex(Theme.Parse(Theme.DefaultMain(dark))));
+        Theme.Apply(dark, ui);
         Theme.Apply(dark, new UiSettings { Main = "#7A1F3D", Accent = "#F5C542" });
         check("custom colors redraw the window icon", w.Icon is DrawingImage && ReferenceEquals(w.Icon, AppIcon.Current), w.Icon?.GetType().Name ?? "null");
         var probe = new Window { Content = new TextBlock() };
@@ -423,7 +479,7 @@ static class SessionListTests
             Math.Abs(Theme.Luminance(same) - Theme.Luminance(Theme.Parse("#2A4378"))) >= 0.3, Theme.Hex(same));
         check("a readable accent is kept", Theme.Hex(AppIcon.Readable(Theme.Parse("#F5C542"), Theme.Parse("#7A1F3D"))) == "#F5C542");
         Theme.Apply(dark, ui);
-        check("going back to default colors restores the original icon", w.Icon is BitmapFrame);
+        check("going back to default colors redraws the icon", w.Icon is DrawingImage && ReferenceEquals(w.Icon, AppIcon.Current));
 
         // Samples to look at: %TEMP%\sm-icon.png (default, a few main/accent pairs, and the 16 px title bar size).
         var pairs = new[] { ("#2A4378", "#5B8CFF"), ("#7A1F3D", "#F5C542"), ("#1F5A3A", "#4CC38A"), ("#AEB5BF", "#5A6472"), ("#E8E8E8", "#FFFFFF"), ("#000000", "#FF3B30") };

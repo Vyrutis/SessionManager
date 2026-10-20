@@ -18,8 +18,12 @@
         <Thickness x:Key="ToolIconMargin">0,0,6,0</Thickness>
 
         <Style x:Key="TabCloseButton" TargetType="Button" BasedOn="{StaticResource ToolButton}">
-            <Setter Property="Padding" Value="4" />
-            <Setter Property="Margin" Value="6,0,0,0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="8,0,0,0" />
+            <Setter Property="Width" Value="20" />
+            <Setter Property="MinHeight" Value="20" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="Focusable" Value="False" />
         </Style>
 
@@ -78,7 +82,7 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="RadioButton">
                         <Grid Background="Transparent">
-                            <Border x:Name="Bd" CornerRadius="4,4,0,0" Padding="4,5,4,6" Background="Transparent">
+                            <Border x:Name="Bd" CornerRadius="6,6,0,0" Padding="4,6,4,7" Background="Transparent">
                                 <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                             </Border>
                             <Border x:Name="Line" Height="2" VerticalAlignment="Bottom" Margin="6,0" CornerRadius="1"
@@ -167,7 +171,7 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ToggleButton">
-                        <Grid Background="Transparent" Margin="10,0">
+                        <Grid Background="Transparent" Margin="8,0">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <TextBlock Text="&#xE706;" FontFamily="{StaticResource Icons}" FontSize="13" VerticalAlignment="Center"
                                            Foreground="{DynamicResource SubTextBrush}" Margin="0,0,7,0" />
@@ -234,7 +238,7 @@
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <Image Source="/Assets/app-48.png" Width="16" Height="16" VerticalAlignment="Center" Margin="12,0,9,0"
+                <Image Source="/Assets/app-48.png" Width="16" Height="16" VerticalAlignment="Center" Margin="12,0,8,0"
                        RenderOptions.BitmapScalingMode="HighQuality" />
                 <TextBlock Grid.Column="1" Text="{Binding Title, RelativeSource={RelativeSource AncestorType=Window}}"
                            VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
@@ -252,12 +256,12 @@
             </Grid>
 
             <!-- Toolbar -->
-            <Border x:Name="ToolbarBorder" Grid.Row="1" Background="{DynamicResource ShellToolbarBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,1" Padding="6,4"
+            <Border x:Name="ToolbarBorder" Grid.Row="1" Background="{DynamicResource ShellToolbarBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,1" Padding="8,5"
                     SizeChanged="Toolbar_SizeChanged">
                 <DockPanel x:Name="ToolbarPanel" LastChildFill="False">
                     <!-- Quick connect: user@host[:port], or rdp://host -->
-                    <Grid x:Name="QuickPanel" DockPanel.Dock="Right" Width="270" Margin="8,0,2,0" VerticalAlignment="Center">
-                        <TextBox x:Name="QuickBox" Padding="24,3,4,3" KeyDown="QuickBox_KeyDown" TextChanged="QuickBox_TextChanged"
+                    <Grid x:Name="QuickPanel" DockPanel.Dock="Right" Width="270" Margin="8,0,0,0" VerticalAlignment="Center">
+                        <TextBox x:Name="QuickBox" Padding="26,4,6,4" KeyDown="QuickBox_KeyDown" TextChanged="QuickBox_TextChanged"
                                  ToolTip="Quick connect: user@host or user@host:port for SSH, rdp://host for Remote Desktop, vnc://host for VNC, https://address for a web page. Press Enter." />
                         <TextBlock FontFamily="{StaticResource Icons}" Text="&#xE71B;" Foreground="{DynamicResource SubTextBrush}" FontSize="12"
                                    VerticalAlignment="Center" Margin="8,0,0,0" IsHitTestVisible="False" />
@@ -267,9 +271,9 @@
                         <Popup x:Name="QuickPopup" PlacementTarget="{Binding ElementName=QuickBox}" Placement="Bottom" StaysOpen="False"
                                AllowsTransparency="True" VerticalOffset="2" Focusable="False">
                             <Border Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
-                                    CornerRadius="6" Padding="4" MinWidth="{Binding ActualWidth, ElementName=QuickBox}">
+                                    CornerRadius="8" Padding="4" MinWidth="{Binding ActualWidth, ElementName=QuickBox}">
                                 <StackPanel>
-                                    <TextBlock x:Name="QuickListTitle" FontSize="11" Margin="6,2,6,4" Foreground="{DynamicResource SubTextBrush}" />
+                                    <TextBlock x:Name="QuickListTitle" FontSize="11" Margin="8,4,8,4" Foreground="{DynamicResource SubTextBrush}" />
                                     <ListBox x:Name="QuickList" BorderThickness="0" Background="Transparent" Focusable="False" MaxHeight="320"
                                              ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
                                 </StackPanel>
@@ -301,7 +305,7 @@
                         </StackPanel>
                     </Button>
 
-                    <Border Width="1" Margin="6,3" Background="{DynamicResource BorderBrush}" />
+                    <Border Width="1" Margin="4,5,8,5" Background="{DynamicResource BorderBrush}" />
 
                     <ToggleButton x:Name="FilesToggle" Style="{StaticResource ToolToggle}" Click="FilesToggle_Click" IsEnabled="False"
                                   ToolTip="Show or hide the SFTP file browser for this SSH tab">
@@ -336,24 +340,24 @@
 
                 <!-- Session list -->
                 <DockPanel Background="{DynamicResource ShellPanelBrush}">
-                    <Border DockPanel.Dock="Top" Padding="6" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
+                    <Border DockPanel.Dock="Top" Padding="8" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
                         <Grid>
-                            <TextBox x:Name="FilterBox" Padding="22,3,26,3" TextChanged="FilterBox_TextChanged" />
-                            <ToggleButton x:Name="FavoritesOnly" HorizontalAlignment="Right" Margin="0,0,3,0" Padding="4,1" Click="FavoritesOnly_Click"
+                            <TextBox x:Name="FilterBox" Padding="24,4,30,4" TextChanged="FilterBox_TextChanged" />
+                            <ToggleButton x:Name="FavoritesOnly" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,4,0" Padding="5,0" MinHeight="22" Click="FavoritesOnly_Click"
                                           Style="{StaticResource ToolToggle}" ToolTip="Show only favourites (right-click a session to make it one)">
                                 <TextBlock x:Name="FavoritesOnlyStar" FontFamily="{StaticResource Icons}" Text="&#xE734;" FontSize="11"
                                            Foreground="{DynamicResource SubTextBrush}" />
                             </ToggleButton>
                             <TextBlock FontFamily="{StaticResource Icons}" Text="&#xE721;" Foreground="{DynamicResource SubTextBrush}" FontSize="12"
-                                       VerticalAlignment="Center" Margin="7,0,0,0" IsHitTestVisible="False" />
+                                       VerticalAlignment="Center" Margin="8,0,0,0" IsHitTestVisible="False" />
                             <TextBlock x:Name="FilterHint" Text="Filter sessions  (Ctrl+F)" Foreground="{DynamicResource SubTextBrush}" VerticalAlignment="Center"
-                                       Margin="26,0,0,0" IsHitTestVisible="False" />
+                                       Margin="27,0,0,0" IsHitTestVisible="False" />
                         </Grid>
                     </Border>
                     <!-- SSH / RDP / VNC tabs above the list; each can be hidden -->
-                    <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="4,4,2,0">
+                    <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="8,4,6,0">
                         <DockPanel>
-                            <Button DockPanel.Dock="Right" Style="{StaticResource ToolButton}" Padding="6,3" Margin="2,0,0,3" Click="TabsMenu_Click"
+                            <Button DockPanel.Dock="Right" Style="{StaticResource ToolButton}" Padding="6,0" MinHeight="26" VerticalAlignment="Center" Margin="4,0,0,2" Click="TabsMenu_Click"
                                     ToolTip="List options: which tabs to show, online status, sorting">
                                 <TextBlock FontFamily="{StaticResource Icons}" Text="&#xE712;" FontSize="12" />
                             </Button>
@@ -404,7 +408,7 @@
                     <Grid>
                     <TextBlock x:Name="EmptyTabHint" TextWrapping="Wrap" TextAlignment="Center" Margin="16,24" VerticalAlignment="Top"
                                Foreground="{DynamicResource SubTextBrush}" IsHitTestVisible="False" Visibility="Collapsed" />
-                    <TreeView x:Name="Tree" BorderThickness="0" Padding="2,4" AllowDrop="True"
+                    <TreeView x:Name="Tree" BorderThickness="0" Padding="4,6" AllowDrop="True"
                               Background="Transparent" Foreground="{DynamicResource TextBrush}"
                               VirtualizingPanel.IsVirtualizing="False"
                               MouseDoubleClick="Tree_MouseDoubleClick"
@@ -422,13 +426,13 @@
                                 <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
                                 <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}" />
                                 <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
-                                <Setter Property="Padding" Value="2,4,8,4" />
+                                <Setter Property="Padding" Value="2,5,8,5" />
                                 <Setter Property="Visibility" Value="{Binding IsVisible, Converter={StaticResource BoolToVis}}" />
                                 <Setter Property="Template">
                                     <Setter.Value>
                                         <ControlTemplate TargetType="TreeViewItem">
                                             <StackPanel>
-                                                <Border x:Name="Bd" CornerRadius="4" Margin="2,1" Padding="{TemplateBinding Padding}" Background="Transparent">
+                                                <Border x:Name="Bd" CornerRadius="6" Margin="4,1" Padding="{TemplateBinding Padding}" Background="Transparent">
                                                     <Grid>
                                                         <Grid.ColumnDefinitions>
                                                             <ColumnDefinition Width="18" />
@@ -439,7 +443,7 @@
                                                         <ContentPresenter Grid.Column="1" ContentSource="Header" />
                                                     </Grid>
                                                 </Border>
-                                                <ItemsPresenter x:Name="ItemsHost" Margin="16,0,0,0" />
+                                                <ItemsPresenter x:Name="ItemsHost" Margin="18,0,0,0" />
                                             </StackPanel>
                                             <ControlTemplate.Triggers>
                                                 <Trigger Property="IsExpanded" Value="False">
@@ -468,7 +472,7 @@
                         <TreeView.ItemTemplate>
                             <HierarchicalDataTemplate DataType="{x:Type core:Node}" ItemsSource="{Binding Children}">
                                 <StackPanel x:Name="RowPanel" Orientation="Horizontal" ToolTip="{Binding ReachText}" ToolTipService.InitialShowDelay="600">
-                                    <Grid Margin="0,0,7,0" VerticalAlignment="Center">
+                                    <Grid Margin="0,0,8,0" VerticalAlignment="Center">
                                         <TextBlock x:Name="Icon" FontFamily="{StaticResource Icons}" Text="{Binding Glyph}" FontSize="14"
                                                    VerticalAlignment="Center" Foreground="{DynamicResource FolderBrush}" />
                                         <!-- Online / offline: a small dot on the icon's corner -->
@@ -476,7 +480,7 @@
                                                  Margin="0,0,-2,-1" Visibility="Collapsed" Stroke="{DynamicResource ShellPanelBrush}" StrokeThickness="1" />
                                     </Grid>
                                     <TextBlock x:Name="NameText" Text="{Binding Name}" VerticalAlignment="Center" />
-                                    <TextBlock x:Name="FavStar" FontFamily="{StaticResource Icons}" Text="&#xE735;" FontSize="10" Margin="5,1,0,0"
+                                    <TextBlock x:Name="FavStar" FontFamily="{StaticResource Icons}" Text="&#xE735;" FontSize="10" Margin="6,1,0,0"
                                                VerticalAlignment="Center" Foreground="{DynamicResource FolderBrush}" Visibility="Collapsed" ToolTip="Favourite" />
                                     <TextBlock Text="{Binding Subtitle}" Foreground="{DynamicResource SubTextBrush}" FontSize="11" VerticalAlignment="Center" Margin="8,0,0,0" />
                                     <Border x:Name="CountBadge" Background="{DynamicResource BadgeBrush}" CornerRadius="7" Padding="6,0" Margin="8,0,0,0"
@@ -544,7 +548,7 @@
                     <!-- Where a dragged item will land: a line between rows, or a frame around a folder -->
                     <Canvas x:Name="DropLayer" IsHitTestVisible="False">
                         <Border x:Name="DropLine" Height="2" CornerRadius="1" Background="{DynamicResource AccentBrush}" Visibility="Collapsed" />
-                        <Border x:Name="DropBox" BorderThickness="1.5" CornerRadius="4" BorderBrush="{DynamicResource AccentBrush}" Visibility="Collapsed" />
+                        <Border x:Name="DropBox" BorderThickness="1.5" CornerRadius="6" BorderBrush="{DynamicResource AccentBrush}" Visibility="Collapsed" />
                     </Canvas>
                     </Grid>
                 </DockPanel>
@@ -558,7 +562,7 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <ListBox x:Name="TabStrip" Background="{DynamicResource ShellTabStripBrush}" BorderThickness="0" Padding="4,5,4,0"
+                    <ListBox x:Name="TabStrip" Background="{DynamicResource ShellTabStripBrush}" BorderThickness="0" Padding="8,6,8,0"
                              ScrollViewer.VerticalScrollBarVisibility="Disabled"
                              ScrollViewer.HorizontalScrollBarVisibility="Auto"
                              SelectionChanged="TabStrip_SelectionChanged"
@@ -573,14 +577,14 @@
                         </ListBox.ItemsPanel>
                         <ListBox.ItemContainerStyle>
                             <Style TargetType="ListBoxItem">
-                                <Setter Property="Margin" Value="0,0,2,0" />
+                                <Setter Property="Margin" Value="0,0,4,0" />
                                 <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
                                 <Setter Property="Template">
                                     <Setter.Value>
                                         <ControlTemplate TargetType="ListBoxItem">
                                             <Grid>
                                                 <Border x:Name="Bd" Background="{DynamicResource TabBrush}" BorderBrush="{DynamicResource BorderBrush}"
-                                                        BorderThickness="1,1,1,0" CornerRadius="6,6,0,0" Padding="10,6,6,6" Opacity="0.85">
+                                                        BorderThickness="1,1,1,0" CornerRadius="8,8,0,0" Padding="12,7,8,7" Opacity="0.85">
                                                     <ContentPresenter />
                                                 </Border>
                                                 <!-- Accent line on the active tab -->
@@ -607,10 +611,10 @@
                         <ListBox.ItemTemplate>
                             <DataTemplate DataType="{x:Type local:OpenTab}">
                                 <StackPanel Orientation="Horizontal" ToolTip="{Binding ToolTip}">
-                                    <Ellipse Width="7" Height="7" Fill="{Binding StatusBrush}" VerticalAlignment="Center" Margin="0,0,7,0" />
-                                    <TextBlock FontFamily="{StaticResource Icons}" Text="{Binding Glyph}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                    <Ellipse Width="7" Height="7" Fill="{Binding StatusBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                    <TextBlock FontFamily="{StaticResource Icons}" Text="{Binding Glyph}" VerticalAlignment="Center" Margin="0,0,8,0" />
                                     <TextBlock FontFamily="{StaticResource Icons}" Text="&#xE895;" Foreground="#E3A008" FontSize="11" VerticalAlignment="Center"
-                                               Margin="0,0,6,0" ToolTip="Included in multi-exec"
+                                               Margin="0,0,8,0" ToolTip="Included in multi-exec"
                                                Visibility="{Binding IsBroadcasting, Converter={StaticResource BoolToVis}}" />
                                     <TextBlock Text="{Binding Title}" VerticalAlignment="Center" MaxWidth="220" TextTrimming="CharacterEllipsis" />
                                     <Button Style="{StaticResource TabCloseButton}" Click="TabCloseButton_Click" ToolTip="Close (Ctrl+Shift+W)">
@@ -624,28 +628,28 @@
                     <Grid x:Name="TabHost" Grid.Row="1" Background="{DynamicResource ShellPanelBrush}">
                         <StackPanel x:Name="EmptyHint" VerticalAlignment="Center" HorizontalAlignment="Center">
                             <TextBlock FontFamily="{StaticResource Icons}" Text="&#xE7F4;" FontSize="48" Foreground="{DynamicResource BorderBrush}" HorizontalAlignment="Center" />
-                            <TextBlock Text="Double-click a session to connect" Foreground="{DynamicResource SubTextBrush}" FontSize="15" Margin="0,12,0,0" HorizontalAlignment="Center" />
+                            <TextBlock Text="Double-click a session to connect" Foreground="{DynamicResource SubTextBrush}" FontSize="15" Margin="0,16,0,0" HorizontalAlignment="Center" />
                             <TextBlock Text="Right-click the list for more options" Foreground="{DynamicResource SubTextBrush}" Opacity="0.8" Margin="0,4,0,0" HorizontalAlignment="Center" />
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,22,0,0">
-                                <Button Click="NewSsh_Click" Padding="14,7" Margin="0,0,10,0">
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,24,0,0">
+                                <Button Click="NewSsh_Click" Margin="0,0,8,0">
                                     <StackPanel Orientation="Horizontal">
                                         <TextBlock FontFamily="{StaticResource Icons}" Text="&#xE756;" Foreground="{DynamicResource SshBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
                                         <TextBlock Text="New SSH session" />
                                     </StackPanel>
                                 </Button>
-                                <Button Click="NewRdp_Click" Padding="14,7" Margin="0,0,10,0">
+                                <Button Click="NewRdp_Click" Margin="0,0,8,0">
                                     <StackPanel Orientation="Horizontal">
                                         <TextBlock FontFamily="{StaticResource Icons}" Text="&#xE7F4;" Foreground="{DynamicResource RdpBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
                                         <TextBlock Text="New RDP session" />
                                     </StackPanel>
                                 </Button>
-                                <Button Click="NewVnc_Click" Padding="14,7" Margin="0,0,10,0">
+                                <Button Click="NewVnc_Click" Margin="0,0,8,0">
                                     <StackPanel Orientation="Horizontal">
                                         <TextBlock FontFamily="{StaticResource Icons}" Text="&#xE8AF;" Foreground="{DynamicResource VncBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
                                         <TextBlock Text="New VNC session" />
                                     </StackPanel>
                                 </Button>
-                                <Button Click="NewWeb_Click" Padding="14,7">
+                                <Button Click="NewWeb_Click">
                                     <StackPanel Orientation="Horizontal">
                                         <TextBlock FontFamily="{StaticResource Icons}" Text="&#xE774;" Foreground="{DynamicResource WebBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
                                         <TextBlock Text="New web session" />

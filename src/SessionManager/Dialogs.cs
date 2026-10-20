@@ -29,6 +29,53 @@ public static class Dialogs
         return (box.Password, save.IsChecked == true);
     }
 
+    /// <summary>
+    /// The login was refused: use a saved credentials entry, or type the password. Without saved credentials it is just the password prompt.
+    /// Returns the chosen profile (null = the typed password) or null if cancelled.
+    /// </summary>
+    public static (CredentialProfile? Profile, string? User, string Password, bool Save)? PromptRetry(Window? owner, string message, IList<CredentialProfile> profiles, bool offerSave, string? user = null)
+    {
+        if (profiles.Count == 0)
+        {
+            if (user != null)
+            {
+                var login = PromptLogin(owner, "Login failed", message, user, offerSave);
+                return login == null ? null : (null, login.Value.User, login.Value.Password, login.Value.Save);
+            }
+            var only = PromptPassword(owner, "Password", message + "\n\nEnter the password to try again:", offerSave);
+            return only == null ? null : (null, null, only.Value.Password, only.Value.Save);
+        }
+
+        var list = profiles.OrderBy(c => c.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+        var combo = new ComboBox { MinWidth = 320, Margin = new Thickness(24, 4, 0, 4) };
+        foreach (var p in list)
+        {
+            var who = (p.Domain.Length > 0 ? p.Domain + "\\" : "") + p.Username;
+            combo.Items.Add(p.Name.Length > 0 ? $"{p.Name}  ({who})" : who);
+        }
+        combo.SelectedIndex = 0;
+        var useSaved = new RadioButton { Content = "Connect with saved credentials", IsChecked = true, GroupName = "retry" };
+        var typed = new RadioButton { Content = "Enter the password", GroupName = "retry", Margin = new Thickness(0, 8, 0, 0) };
+        var userBox = new TextBox { Text = user ?? "", MinWidth = 320, Margin = new Thickness(24, 4, 0, 0), IsEnabled = false,
+            Visibility = user != null ? Visibility.Visible : Visibility.Collapsed };
+        var box = new PasswordBox { MinWidth = 320, Margin = new Thickness(24, 4, 0, 4), IsEnabled = false };
+        var save = new CheckBox { Content = "Save password", Margin = new Thickness(24, 4, 0, 0), IsEnabled = false,
+            Visibility = offerSave ? Visibility.Visible : Visibility.Collapsed };
+        typed.Checked += (_, _) => { userBox.IsEnabled = box.IsEnabled = save.IsEnabled = true; combo.IsEnabled = false; box.Focus(); };
+        useSaved.Checked += (_, _) => { userBox.IsEnabled = box.IsEnabled = save.IsEnabled = false; combo.IsEnabled = true; };
+
+        var panel = new StackPanel();
+        panel.Children.Add(useSaved);
+        panel.Children.Add(combo);
+        panel.Children.Add(typed);
+        panel.Children.Add(userBox);
+        panel.Children.Add(box);
+        panel.Children.Add(save);
+        var dlg = Build(owner, "Login failed", message, panel, null, out _);
+        if (dlg.ShowDialog() != true) return null;
+        return typed.IsChecked == true ? (null, user != null ? userBox.Text.Trim() : null, box.Password, save.IsChecked == true) : (list[combo.SelectedIndex], null, "", false);
+    }
+
     /// <summary>Asks for a new passphrase twice. Returns null if cancelled.</summary>
     public static string? PromptNewPassphrase(Window owner, string title, string label)
     {
@@ -53,7 +100,7 @@ public static class Dialogs
     {
         var (typedDomain, plainUser) = DomainPicker.Split(user);
         var d = new DomainPicker { Domain = typedDomain.Length > 0 ? typedDomain : domain };
-        var u = new TextBox { Text = plainUser, MinWidth = 180, Padding = new Thickness(3, 2, 3, 2) };
+        var u = new TextBox { Text = plainUser, MinWidth = 180 };
         var p = new PasswordBox { MinWidth = 320 };
         var panel = new StackPanel();
         panel.Children.Add(UserRow(d, u));
@@ -73,7 +120,7 @@ public static class Dialogs
     /// <summary>Username and password for a web page; <paramref name="offerSave"/> shows "Save password". Returns null if cancelled.</summary>
     public static (string User, string Password, bool Save)? PromptLogin(Window? owner, string title, string label, string user, bool offerSave)
     {
-        var u = new TextBox { Text = user, MinWidth = 320, Padding = new Thickness(3, 2, 3, 2) };
+        var u = new TextBox { Text = user, MinWidth = 320 };
         var p = new PasswordBox { MinWidth = 320 };
         var save = new CheckBox { Content = "Save in Windows Credential Manager", IsChecked = true, Margin = new Thickness(0, 8, 0, 0),
             Visibility = offerSave ? Visibility.Visible : Visibility.Collapsed };
@@ -175,7 +222,7 @@ public static class Dialogs
         panel.Children.Add(note);
         var dlg = Build(owner, "Restore a backup", "Choose the day to go back to:", panel, d => list.SelectedItem != null, out var buttons);
         ((Button)buttons.Children[0]).Content = "Restore";
-        var open = new Button { Content = "Open backups folder", Padding = new Thickness(10, 3, 10, 3), Margin = new Thickness(0, 0, 8, 0) };
+        var open = new Button { Content = "Open backups folder", Margin = new Thickness(0, 0, 8, 0) };
         open.Click += (_, _) => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(SessionBackup.Folder) { UseShellExecute = true });
         buttons.Children.Insert(0, open);
         list.MouseDoubleClick += (_, _) => { if (list.SelectedItem != null) dlg.DialogResult = true; };
@@ -185,7 +232,7 @@ public static class Dialogs
     /// <summary>Wake-on-LAN: the network card address (pre-filled when known) and whether to connect once it's awake.</summary>
     public static (string Mac, bool Connect)? WakeUp(Window owner, string name, string host, string mac, bool foundAutomatically)
     {
-        var box = new TextBox { Text = mac, MinWidth = 320, Padding = new Thickness(3, 2, 3, 2), FontFamily = new System.Windows.Media.FontFamily("Cascadia Mono, Consolas") };
+        var box = new TextBox { Text = mac, MinWidth = 320, FontFamily = new System.Windows.Media.FontFamily("Cascadia Mono, Consolas") };
         var hint = new TextBlock
         {
             TextWrapping = TextWrapping.Wrap, MaxWidth = 400, FontSize = 11, Margin = new Thickness(0, 4, 0, 0),
@@ -223,7 +270,7 @@ public static class Dialogs
             int r = grid.RowDefinitions.Count;
             grid.RowDefinitions.Add(new RowDefinition());
             var check = new CheckBox { Content = label, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 4, 12, 4) };
-            field.Margin = new Thickness(0, 3, 0, 3);
+            field.Margin = new Thickness(0, 4, 0, 4);
             field.IsEnabled = false;
             check.Checked += (_, _) => { field.IsEnabled = true; if (field is Control c) c.Focus(); };
             check.Unchecked += (_, _) => field.IsEnabled = false;
@@ -240,9 +287,9 @@ public static class Dialogs
         foreach (var p in profiles.OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase))
             profileBox.Items.Add(new ComboBoxItem { Content = $"{p.Name}  ({p.Username})", Tag = p });
         profileBox.SelectedIndex = 0;
-        var userBox = new TextBox { Padding = new Thickness(3, 2, 3, 2) };
+        var userBox = new TextBox();
         var passwordBox = new PasswordBox();
-        var portBox = new TextBox { Padding = new Thickness(3, 2, 3, 2), Width = 80, HorizontalAlignment = HorizontalAlignment.Left,
+        var portBox = new TextBox { Width = 80, HorizontalAlignment = HorizontalAlignment.Left,
             Text = protocol == Protocol.Web ? "443" : SessionSettings.DefaultPort(protocol).ToString() };
         var jumpBox = new ComboBox();
         jumpBox.Items.Add(new ComboBoxItem { Content = "None — connect directly" });
@@ -297,10 +344,10 @@ public static class Dialogs
     /// <summary>Adds or edits a saved SSH command; null = cancelled.</summary>
     public static SavedCommand? EditCommand(Window owner, SavedCommand? existing)
     {
-        var name = new TextBox { Text = existing?.Name ?? "", MinWidth = 380, Padding = new Thickness(3, 2, 3, 2) };
+        var name = new TextBox { Text = existing?.Name ?? "", MinWidth = 380 };
         var text = new TextBox
         {
-            Text = existing?.Text ?? "", AcceptsReturn = true, Height = 90, Padding = new Thickness(3, 2, 3, 2), TextWrapping = TextWrapping.NoWrap,
+            Text = existing?.Text ?? "", AcceptsReturn = true, Height = 90, TextWrapping = TextWrapping.NoWrap,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto, FontFamily = new System.Windows.Media.FontFamily("Cascadia Mono, Consolas"), FontSize = 12,
         };
         var run = new CheckBox { Content = "Run it (press Enter after the text)", IsChecked = existing?.Run ?? true, Margin = new Thickness(0, 8, 0, 0) };
@@ -340,7 +387,7 @@ public static class Dialogs
         Fill(0);
         Button Btn(string text, Action click)
         {
-            var b = new Button { Content = text, Padding = new Thickness(10, 3, 10, 3), Margin = new Thickness(0, 0, 0, 6), MinWidth = 90 };
+            var b = new Button { Content = text, Margin = new Thickness(0, 0, 0, 6), MinWidth = 90 };
             b.Click += (_, _) => click();
             return b;
         }
@@ -421,7 +468,7 @@ public static class Dialogs
         }, out var buttons);
         if (hasSaved)
         {
-            var remove = new Button { Content = "Remove saved password", Padding = new Thickness(10, 3, 10, 3), Margin = new Thickness(0, 0, 8, 0) };
+            var remove = new Button { Content = "Remove saved password", Margin = new Thickness(0, 0, 8, 0) };
             remove.Click += (_, _) => { result = PasswordChange.Remove; dlg.DialogResult = true; };
             buttons.Children.Insert(0, remove);
         }
@@ -435,7 +482,7 @@ public static class Dialogs
         Window owner, string title, CredentialProfile? existing, bool hasPassword)
     {
         var name = new TextBox { Text = existing?.Name ?? "", MinWidth = 300 };
-        var user = new TextBox { Text = existing?.Username ?? "", Padding = new Thickness(3, 2, 3, 2) };
+        var user = new TextBox { Text = existing?.Username ?? "" };
         var domain = new DomainPicker { Domain = existing?.Domain ?? "" };
         domain.Box.ToolTip = "Optional Windows domain; used by Remote Desktop sessions";
         var pw = new PasswordBox();
@@ -456,8 +503,8 @@ public static class Dialogs
             Grid.SetRow(l, r);
             Grid.SetRow(field, r);
             Grid.SetColumn(field, 1);
-            if (field is Control c) { c.Margin = new Thickness(0, 3, 0, 3); c.Padding = new Thickness(3, 2, 3, 2); }
-            else if (field is Panel) ((FrameworkElement)field).Margin = new Thickness(0, 3, 0, 3);
+            if (field is Control c) { c.Margin = new Thickness(0, 4, 0, 4); }
+            else if (field is Panel) ((FrameworkElement)field).Margin = new Thickness(0, 4, 0, 4);
             grid.Children.Add(l);
             grid.Children.Add(field);
         }
@@ -503,8 +550,8 @@ public static class Dialogs
 
     private static Window Build(Window? owner, string title, string label, UIElement content, Func<Window, bool>? validate, out StackPanel buttons)
     {
-        var okButton = new Button { Content = "OK", IsDefault = true, MinWidth = 80, Padding = new Thickness(10, 3, 10, 3) };
-        var cancel = new Button { Content = "Cancel", IsCancel = true, MinWidth = 80, Padding = new Thickness(10, 3, 10, 3), Margin = new Thickness(8, 0, 0, 0) };
+        var okButton = new Button { Content = "OK", IsDefault = true, MinWidth = 80 };
+        var cancel = new Button { Content = "Cancel", IsCancel = true, MinWidth = 80, Margin = new Thickness(8, 0, 0, 0) };
         buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
         buttons.Children.Add(okButton);
         buttons.Children.Add(cancel);

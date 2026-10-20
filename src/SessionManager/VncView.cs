@@ -229,7 +229,13 @@ public sealed class VncView : Grid, ISessionView
         return Dispatcher.Invoke(() =>
         {
             var s = _request.Settings;
-            var result = _askPassword((failure != null ? failure + "\n\n" : "") + $"VNC password for {s.Host}:", _request.SavePasswordTo != null);
+            (string Password, bool Save)? result;
+            if (failure != null && _request.RetryLogin != null)
+            {
+                var retry = _request.RetryLogin($"{failure}\n\nVNC password for {s.Host}:", _request.SavePasswordTo != null);
+                result = retry == null ? null : (retry.Password, retry.Save);
+            }
+            else result = _askPassword((failure != null ? failure + "\n\n" : "") + $"VNC password for {s.Host}:", _request.SavePasswordTo != null);
             if (result == null) return null;
             _request.Password = result.Value.Password;
             if (result.Value.Save && _request.SavePasswordTo is Guid id)

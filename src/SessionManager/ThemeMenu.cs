@@ -130,9 +130,9 @@ public sealed class ThemeMenu : Border
         root.Children.Add(Heading("Background picture"));
         _thumb = new Border { Width = 72, Height = 44, CornerRadius = new CornerRadius(4), BorderThickness = new Thickness(1), Margin = new Thickness(0, 0, 10, 0) };
         _thumb.SetResourceReference(BorderBrushProperty, "BorderBrush");
-        var choose = new Button { Content = "Choose picture…", Padding = new Thickness(10, 3, 10, 3), HorizontalAlignment = HorizontalAlignment.Left };
+        var choose = new Button { Content = "Choose picture…", HorizontalAlignment = HorizontalAlignment.Left };
         choose.Click += (_, _) => ChoosePicture();
-        _removePicture = new Button { Content = "Remove", Padding = new Thickness(10, 3, 10, 3), Margin = new Thickness(0, 6, 0, 0), HorizontalAlignment = HorizontalAlignment.Left };
+        _removePicture = new Button { Content = "Remove", Margin = new Thickness(0, 6, 0, 0), HorizontalAlignment = HorizontalAlignment.Left };
         _removePicture.Click += (_, _) => { _ui.BackgroundImage = null; Sync(); Push(true); };
         var pictureButtons = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
         pictureButtons.Children.Add(choose);

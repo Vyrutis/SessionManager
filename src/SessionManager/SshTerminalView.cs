@@ -205,7 +205,7 @@ public sealed class SshTerminalView : Grid, ISessionView
         Write($"\x1b[{color}m{text}\x1b[0m\r\n");
     }
 
-    private SshUi Ui => SshUiWpf.Create(this, _askPassword, Log);
+    private SshUi Ui => SshUiWpf.Create(this, _askPassword, Log, _request.RetryLogin);
 
     private void SetStatus(TabStatus s)
     {

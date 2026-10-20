@@ -27,7 +27,7 @@ public sealed class RdpView : Grid, ISessionView
     private readonly WinForms.Panel _panel = new() { BackColor = System.Drawing.Color.Black, Dock = WinForms.DockStyle.Fill };
     private readonly WindowsFormsHost _host;
     private readonly Border _overlay;
-    private readonly Button _reconnectButton;
+    private readonly Button _reconnectButton, _otherLoginButton;
     private readonly TextBlock _overlayText = new() { Foreground = Brushes.White, FontSize = 15, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap };
     private readonly DispatcherTimer _poll = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private readonly DispatcherTimer _resizeDebounce = new() { Interval = TimeSpan.FromMilliseconds(400) };
@@ -58,8 +58,11 @@ public sealed class RdpView : Grid, ISessionView
         var reconnect = _reconnectButton = new Button { Content = "Reconnect", Padding = new Thickness(16, 6, 16, 6), Margin = new Thickness(0, 16, 0, 0), HorizontalAlignment = HorizontalAlignment.Center };
         reconnect.Click += (_, _) => Reconnect();
         var stack = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, MaxWidth = 520 };
+        var other = _otherLoginButton = new Button { Content = "Try another login…", Margin = new Thickness(0, 8, 0, 0), HorizontalAlignment = HorizontalAlignment.Center, Visibility = Visibility.Collapsed };
+        other.Click += (_, _) => TryAnotherLogin();
         stack.Children.Add(_overlayText);
         stack.Children.Add(reconnect);
+        stack.Children.Add(other);
         _overlay = new Border { Child = stack, Visibility = Visibility.Collapsed };
         _overlay.SetResourceReference(Border.BackgroundProperty, "PanelBrush");
         _overlayText.SetResourceReference(TextBlock.ForegroundProperty, "TextBrush");
@@ -237,6 +240,8 @@ public sealed class RdpView : Grid, ISessionView
             }
             catch { }
             ShowOverlay((_everConnected ? "Disconnected from " : "Could not connect to ") + _request.Settings.Host + "." + detail);
+            // A refused login can't be told apart reliably from other failures, so a failed first connection offers another login.
+            if (!_everConnected && _request.RetryLogin != null) _otherLoginButton.Visibility = Visibility.Visible;
             SetStatus(TabStatus.Disconnected);
             DisposeControl();
         }
@@ -317,6 +322,7 @@ public sealed class RdpView : Grid, ISessionView
     {
         _overlayText.Text = text;
         _reconnectButton.Visibility = showButton ? Visibility.Visible : Visibility.Collapsed;
+        _otherLoginButton.Visibility = Visibility.Collapsed;
         _overlay.Visibility = Visibility.Visible;
         _host.Visibility = Visibility.Hidden;
     }
@@ -332,6 +338,22 @@ public sealed class RdpView : Grid, ISessionView
         if (_status == s) return;
         _status = s;
         StatusChanged?.Invoke(s);
+    }
+
+    private void TryAnotherLogin()
+    {
+        var s = _request.Settings;
+        var r = _request.RetryLogin?.Invoke($"The connection to {s.Host} failed. If the login was refused, try another one.", _request.SavePasswordTo != null);
+        if (r == null) return;
+        if (r.Username != null) s.Username = r.Username;
+        if (r.Domain != null) s.Domain = r.Domain;
+        _request.Password = r.Password;
+        if (r.Save && _request.SavePasswordTo is Guid id)
+        {
+            try { CredentialStore.Set(id, r.Password, s.Username); }
+            catch (Exception ex) { MessageBox.Show(ex.Message, "Session Manager"); }
+        }
+        Reconnect();
     }
 
     public void Reconnect()

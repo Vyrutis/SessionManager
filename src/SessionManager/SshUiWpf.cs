@@ -5,10 +5,12 @@ namespace SessionManager;
 /// <summary>Builds the <see cref="SshUi"/> callbacks for a WPF element: dialogs and log messages go to its window.</summary>
 public static class SshUiWpf
 {
-    public static SshUi Create(FrameworkElement anchor, Func<string, bool, (string Password, bool Save)?> askPassword, Action<string, LogKind> log) => new()
+    public static SshUi Create(FrameworkElement anchor, Func<string, bool, (string Password, bool Save)?> askPassword, Action<string, LogKind> log,
+        Func<string, bool, SshRetry?>? retryLogin = null) => new()
     {
         AskPassword = askPassword,
         Log = log,
+        RetryLogin = retryLogin,
         Post = a => anchor.Dispatcher.InvokeAsync(a),
         ConfirmHostKey = q => anchor.Dispatcher.Invoke(() =>
         {

@@ -6,7 +6,7 @@ namespace SessionManager;
 
 /// <summary>
 /// The window and taskbar icon: a rounded square in the main color with a "&gt;_" prompt in the accent color.
-/// With neither color customised it is the icon built into the exe (Assets/app.ico).
+/// Without custom colors it uses the theme's own (light or dark), so it changes with the theme. The icon built into the exe (Assets/app.ico) is only used before the theme is applied.
 /// </summary>
 public static class AppIcon
 {
@@ -20,10 +20,8 @@ public static class AppIcon
     /// <summary>Redraws the icon for these settings and sets it on every open window.</summary>
     public static void Update(bool dark, UiSettings ui)
     {
-        _current = ui.Main == null && ui.Accent == null
-            ? null
-            : Draw(Theme.ParseOrNull(ui.Main) ?? Theme.Parse(Theme.DefaultMain(dark)),
-                   Theme.ParseOrNull(ui.Accent) ?? Theme.Parse(Theme.DefaultAccent(dark)));
+        _current = Draw(Theme.ParseOrNull(ui.Main) ?? Theme.Parse(Theme.DefaultMain(dark)),
+                        Theme.ParseOrNull(ui.Accent) ?? Theme.Parse(Theme.DefaultAccent(dark)));
         foreach (Window w in Application.Current.Windows) w.Icon = Current;
     }
 

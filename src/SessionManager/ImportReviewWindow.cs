@@ -31,7 +31,7 @@ public sealed class ImportReviewWindow : Window
     private readonly CheckBox _useFolder = new() { Content = "Put them in a new folder:", VerticalAlignment = VerticalAlignment.Center };
     private readonly TextBox _folderName = new() { Width = 200, Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
     private readonly CheckBox _skipExisting = new() { Content = "Skip connections I already have", IsChecked = true, Margin = new Thickness(18, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-    private readonly Button _ok = new() { Content = "Import", IsDefault = true, MinWidth = 90, Padding = new Thickness(10, 3, 10, 3) };
+    private readonly Button _ok = new() { Content = "Import", IsDefault = true, MinWidth = 90 };
     private readonly TextBlock _count = new() { VerticalAlignment = VerticalAlignment.Center };
     private readonly CheckBox _showPasswords = new() { Content = "Show passwords", Margin = new Thickness(18, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
     private readonly CheckBox _shareLogins = new()
@@ -89,15 +89,15 @@ public sealed class ImportReviewWindow : Window
 
         // Buttons
         var bottom = new DockPanel { Margin = new Thickness(0, 12, 0, 0) };
-        var cancel = new Button { Content = "Cancel", IsCancel = true, MinWidth = 90, Padding = new Thickness(10, 3, 10, 3), Margin = new Thickness(8, 0, 0, 0) };
+        var cancel = new Button { Content = "Cancel", IsCancel = true, MinWidth = 90, Margin = new Thickness(8, 0, 0, 0) };
         DockPanel.SetDock(cancel, Dock.Right);
         DockPanel.SetDock(_ok, Dock.Right);
         bottom.Children.Add(cancel);
         bottom.Children.Add(_ok);
         var left = new StackPanel { Orientation = Orientation.Horizontal };
-        var all = new Button { Content = "All", Padding = new Thickness(10, 3, 10, 3) };
-        var none = new Button { Content = "None", Padding = new Thickness(10, 3, 10, 3), Margin = new Thickness(6, 0, 0, 0) };
-        var add = new Button { Content = "Add row", Padding = new Thickness(10, 3, 10, 3), Margin = new Thickness(6, 0, 12, 0) };
+        var all = new Button { Content = "All" };
+        var none = new Button { Content = "None", Margin = new Thickness(6, 0, 0, 0) };
+        var add = new Button { Content = "Add row", Margin = new Thickness(6, 0, 12, 0) };
         all.Click += (_, _) => { foreach (var r in _rows) r.Check.IsChecked = true; };
         none.Click += (_, _) => { foreach (var r in _rows) r.Check.IsChecked = false; };
         add.Click += (_, _) =>

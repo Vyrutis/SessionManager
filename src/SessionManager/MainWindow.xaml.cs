@@ -296,6 +296,7 @@ public partial class MainWindow : Window
             IsOverride = connectAs != null,
             SavePasswordTo = saveTo,
             Jump = jump,
+            RetryLogin = (message, offerSave) => AskRetry(message, offerSave, node.Protocol, settings.Username),
         });
         if (node.Parent != null)
         {
@@ -346,6 +347,19 @@ public partial class MainWindow : Window
         tab.IsBroadcasting = _multiExec && view is SshTerminalView;
         TabStrip.SelectedItem = tab;
         view.Start();
+    }
+
+    /// <summary>After a refused login: connect with a saved credentials entry, or type the password.</summary>
+    private SshRetry? AskRetry(string message, bool offerSave, Protocol protocol, string currentUser)
+    {
+        // Web pages need a user name too; SSH and RDP keep the user unless a saved entry is chosen; VNC has only a password.
+        var r = Dialogs.PromptRetry(this, message, _store.Data.Credentials, offerSave, protocol == Protocol.Web ? currentUser : null);
+        if (r == null) return null;
+        if (r.Value.Profile is not { } p) return new SshRetry(r.Value.User, r.Value.Password, r.Value.Save);
+        var pw = CredentialStore.Get(p.Id) ?? Dialogs.PromptPassword(this, "Password", $"Password for \"{p.Name}\":", false)?.Password;
+        if (pw == null) return null;
+        return new SshRetry(protocol == Protocol.Ssh ? DomainPicker.Combine(p.Domain, p.Username) : p.Username, pw, false,
+            protocol == Protocol.Rdp ? p.Domain : null);
     }
 
     private (string Password, bool Save)? AskPassword(string prompt, bool offerSave) =>
@@ -771,19 +785,22 @@ public partial class MainWindow : Window
             var execute = Item("Execute", "\uE768", () => OpenSession(node), gesture: "Enter", color: "SshBrush");
             execute.FontWeight = FontWeights.SemiBold;
             menu.Items.Add(execute);
-            if (node.Protocol is Protocol.Ssh or Protocol.Rdp) menu.Items.Add(Item("Connect as...", "\uE77B", () => ConnectAs(node)));
+            if (node.Protocol is Protocol.Ssh or Protocol.Rdp) menu.Items.Add(ConnectAsMenu(node));
             menu.Items.Add(new Separator());
             menu.Items.Add(Item(node.IsFavorite ? "Remove from favourites" : "Add to favourites", node.IsFavorite ? "\uE735" : "\uE734",
                 () => SetFavorite(new[] { node }, !node.IsFavorite), color: "FolderBrush"));
             menu.Items.Add(Item("Edit session", "\uE70F", () => EditSession(node), color: "RdpBrush"));
-            menu.Items.Add(Item("Rename session", "\uE8AC", () => Rename(node), gesture: "F2"));
-            menu.Items.Add(Item("Duplicate session", "\uE8C8", () => Duplicate(node)));
-            menu.Items.Add(Item("Change password...", "\uE8D7", () => ChangePassword(node), color: "FolderBrush"));
             menu.Items.Add(Item("Delete session", "\uE74D", () => Delete(new List<Node> { node }), gesture: "Del", color: "DangerBrush"));
             menu.Items.Add(new Separator());
-            menu.Items.Add(Item("Ping host", "\uE839", () => new PingWindow(this, node.Settings!.Host, node.Settings.Port).Show(), color: "RdpBrush"));
-            menu.Items.Add(Item("Wake up (Wake-on-LAN)...", "\uE7E8", () => WakeUp(node), color: "SshBrush"));
             var more = Item("More", "\uE712", () => { });
+            more.Items.Add(Item("Rename session", "\uE8AC", () => Rename(node), gesture: "F2"));
+            more.Items.Add(Item("Duplicate session", "\uE8C8", () => Duplicate(node)));
+            // A session that uses a credential profile has no password of its own: change it in the credentials list.
+            if (ProfileFor(node.Settings!) == null) more.Items.Add(Item("Change password...", "\uE8D7", () => ChangePassword(node), color: "FolderBrush"));
+            more.Items.Add(new Separator());
+            more.Items.Add(Item("Ping host", "\uE839", () => new PingWindow(this, node.Settings!.Host, node.Settings.Port).Show(), color: "RdpBrush"));
+            more.Items.Add(Item("Wake up (Wake-on-LAN)...", "\uE7E8", () => WakeUp(node), color: "SshBrush"));
+            more.Items.Add(new Separator());
             more.Items.Add(Item("New folder here", "\uE8F4", () => NewFolder(node.Parent!), color: "FolderBrush"));
             more.Items.Add(Item("Save session to file", "\uE74E", () => Export(node), color: "RdpBrush"));
             more.Items.Add(Item("Create a desktop shortcut", "\uE71B", () => CreateShortcut(node), color: "FolderBrush"));
@@ -1213,6 +1230,43 @@ public partial class MainWindow : Window
             else if (!dlg.SavePassword && dlg.NewPassword == "") CredentialStore.Delete(node.Id);
         }
         catch (Exception ex) { Error("Could not update the saved password", ex); }
+    }
+
+    /// <summary>"Connect as": the credentials list (the pick is saved on the session), then a one-time user. With no saved credentials it is just the one-time prompt.</summary>
+    private MenuItem ConnectAsMenu(Node node)
+    {
+        var profiles = _store.Data.Credentials;
+        if (profiles.Count == 0) return Item("Connect as...", "\uE77B", () => ConnectAs(node));
+        var menu = Item("Connect as", "\uE77B", () => { });
+        var current = ProfileFor(node.Settings!);
+        foreach (var profile in profiles.OrderBy(c => c.Name, StringComparer.CurrentCultureIgnoreCase))
+        {
+            var p = profile;
+            var user = (p.Domain.Length > 0 ? p.Domain + "\\" : "") + p.Username;
+            var item = Item(p.Name.Length > 0 ? $"{p.Name}  ({user})" : user, p == current ? "\uE73E" : "", () => ConnectWithProfile(node, p));
+            item.ToolTip = "Uses this user for the session from now on, and connects";
+            menu.Items.Add(item);
+        }
+        menu.Items.Add(new Separator());
+        menu.Items.Add(Item("Another user, this time only...", "\uE77B", () => ConnectAs(node)));
+        return menu;
+    }
+
+    /// <summary>Assigns the credential profile to the session (saved) and connects with it.</summary>
+    private void ConnectWithProfile(Node node, CredentialProfile profile)
+    {
+        AssignProfile(node, profile);
+        OpenSession(node);
+    }
+
+    internal void AssignProfile(Node node, CredentialProfile profile)
+    {
+        var s = node.Settings!;
+        s.CredentialId = profile.Id;
+        s.Username = profile.Username;
+        s.Domain = node.Protocol == Protocol.Rdp ? profile.Domain : "";
+        node.NotifySettingsChanged();
+        Save();
     }
 
     private void ConnectAs(Node node)
