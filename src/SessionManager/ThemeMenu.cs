@@ -240,7 +240,7 @@ public sealed class ThemeMenu : Border
     {
         var dlg = new OpenFileDialog
         {
-            Title = "Choose a background picture",
+            Title = Loc.T("Choose a background picture"),
             Filter = "Pictures (*.jpg;*.jpeg;*.png;*.bmp;*.gif;*.tif;*.tiff;*.webp)|*.jpg;*.jpeg;*.png;*.bmp;*.gif;*.tif;*.tiff;*.webp|All files (*.*)|*.*",
             InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
         };

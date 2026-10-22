@@ -41,6 +41,7 @@ public partial class App : Application
             ex.Handled = true;
         };
 
+        LocWpf.Start();
         SessionEnding += (_, _) => IsSessionEnding = true;
         base.OnStartup(e);
         var window = new MainWindow();

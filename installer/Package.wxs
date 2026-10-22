@@ -7,12 +7,12 @@
            Compressed="yes">
 
     <!-- Installing a newer version replaces the old one; sessions and passwords (in %APPDATA% / Credential Manager) are kept. -->
-    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of Session Manager is already installed." />
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="!(loc.DowngradeError)" />
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
 
     <Icon Id="AppIcon" SourceFile="$(var.IconPath)" />
     <Property Id="ARPPRODUCTICON" Value="AppIcon" />
-    <Property Id="ARPURLINFOABOUT" Value="Session Manager - SSH and Remote Desktop sessions" />
+    <Property Id="ARPURLINFOABOUT" Value="!(loc.AboutText)" />
     <Property Id="ARPNOREPAIR" Value="1" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
@@ -26,13 +26,13 @@
       <Files Directory="INSTALLFOLDER" Include="$(var.PublishDir)**" />
 
       <Component Id="StartMenuShortcut" Directory="ProgramMenuFolder" Guid="5F0C3B7E-8B57-4C83-9C21-6E2B1D0A4E11">
-        <Shortcut Id="StartMenuShortcut" Name="Session Manager" Description="SSH and Remote Desktop sessions"
+        <Shortcut Id="StartMenuShortcut" Name="Session Manager" Description="!(loc.ShortcutDescription)"
                   Target="[INSTALLFOLDER]SessionManager.exe" WorkingDirectory="INSTALLFOLDER" Icon="AppIcon" />
         <RegistryValue Root="HKCU" Key="Software\SessionManager\Installer" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
       </Component>
 
       <Component Id="DesktopShortcut" Directory="DesktopFolder" Guid="9A4D2E61-1C7F-4B0E-A3D5-7E8F90B1C2D3">
-        <Shortcut Id="DesktopShortcut" Name="Session Manager" Description="SSH and Remote Desktop sessions"
+        <Shortcut Id="DesktopShortcut" Name="Session Manager" Description="!(loc.ShortcutDescription)"
                   Target="[INSTALLFOLDER]SessionManager.exe" WorkingDirectory="INSTALLFOLDER" Icon="AppIcon" />
         <RegistryValue Root="HKCU" Key="Software\SessionManager\Installer" Name="DesktopShortcut" Type="integer" Value="1" KeyPath="yes" />
       </Component>

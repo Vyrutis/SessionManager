@@ -46,6 +46,7 @@ public partial class MainWindow : Window
         InitListTabs();
         InitReachability();
         InitQuickList();
+        InitUpdates();
         TabStrip.ItemsSource = _tabs;
         TabStrip.Visibility = Visibility.Collapsed;
         _tabs.CollectionChanged += (_, _) =>
@@ -995,7 +996,7 @@ public partial class MainWindow : Window
     {
         var dlg = new OpenFileDialog
         {
-            Title = "Import connections",
+            Title = Loc.T("Import connections"),
             Filter = "Connection lists (*.xml;*.mxtsessions;*.ini;*.csv;*.tsv;*.vnc;config)|*.xml;*.mxtsessions;*.ini;*.csv;*.tsv;*.vnc;config|" +
                      "mRemoteNG (confCons.xml)|*.xml|MobaXterm sessions (*.mxtsessions)|*.mxtsessions;MobaXterm.ini|" +
                      "UltraVNC, TightVNC or RealVNC connection (*.vnc)|*.vnc|" +
@@ -1048,7 +1049,7 @@ public partial class MainWindow : Window
     {
         var dlg = new OpenFileDialog
         {
-            Title = "Scan a picture or PDF for connections",
+            Title = Loc.T("Scan a picture or PDF for connections"),
             Filter = "Pictures and PDFs|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff;*.pdf|All files (*.*)|*.*",
         };
         if (dlg.ShowDialog(this) == true) ScanPath(dlg.FileName);
@@ -1343,10 +1344,10 @@ public partial class MainWindow : Window
             int sessions = nodes.Count(n => n.IsSession);
             int inside = deleted.Count - sessions;
             var parts = new List<string>();
-            if (sessions > 0) parts.Add($"{sessions} session{(sessions == 1 ? "" : "s")}");
-            if (folders > 0) parts.Add($"{folders} folder{(folders == 1 ? "" : "s")}" +
-                                       (inside > 0 ? $" (with {inside} session{(inside == 1 ? "" : "s")} in them)" : ""));
-            question = $"Delete {string.Join(" and ", parts)}?\n\n" +
+            if (sessions > 0) parts.Add(Loc.T($"{sessions} session{(sessions == 1 ? "" : "s")}"));
+            if (folders > 0) parts.Add(Loc.T($"{folders} folder{(folders == 1 ? "" : "s")}") +
+                                       (inside > 0 ? Loc.T($" (with {inside} session{(inside == 1 ? "" : "s")} in them)") : ""));
+            question = $"Delete {string.Join(Loc.T(" and "), parts)}?\n\n" +
                        string.Join("\n", nodes.Take(12).Select(n => "  " + n.Name)) + (nodes.Count > 12 ? $"\n  … and {nodes.Count - 12} more" : "");
         }
         var deletedIds = deleted.Select(n => n.Id).ToHashSet();
@@ -1387,7 +1388,7 @@ public partial class MainWindow : Window
         var safeName = string.Concat(node.Name.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
         var filter = "Session Manager session (*.smsession)|*.smsession";
         if (node.Protocol == Protocol.Rdp) filter += "|Remote Desktop file (*.rdp)|*.rdp";
-        var dlg = new SaveFileDialog { Title = "Save session to file", FileName = safeName, Filter = filter, DefaultExt = SessionFile.Extension };
+        var dlg = new SaveFileDialog { Title = Loc.T("Save session to file"), FileName = safeName, Filter = filter, DefaultExt = SessionFile.Extension };
         if (dlg.ShowDialog(this) != true) return;
 
         if (Path.GetExtension(dlg.FileName).Equals(".rdp", StringComparison.OrdinalIgnoreCase))
@@ -1422,7 +1423,7 @@ public partial class MainWindow : Window
     {
         var dlg = new OpenFileDialog
         {
-            Title = "Import sessions",
+            Title = Loc.T("Import sessions"),
             Filter = "Session files (*.smsession;*.rdp;*.smlist)|*.smsession;*.rdp;*.smlist|All files (*.*)|*.*",
             Multiselect = true,
         };
@@ -1540,9 +1541,9 @@ public partial class MainWindow : Window
         SessionList.Write(dlg.FileName, model);
 
         int folders = SessionList.AllNodes(items).Count(n => n.IsFolder);
-        Info($"Exported {sessions.Count} session{(sessions.Count == 1 ? "" : "s")}" +
-             (folders > 0 ? $" in {folders} folder{(folders == 1 ? "" : "s")}" : "") +
-             (passphrase != null ? ", including the encrypted passwords." : " (without passwords).") +
+        Info(Loc.T($"Exported {sessions.Count} session{(sessions.Count == 1 ? "" : "s")}") +
+             (folders > 0 ? Loc.T($" in {folders} folder{(folders == 1 ? "" : "s")}") : "") +
+             Loc.T(passphrase != null ? ", including the encrypted passwords." : " (without passwords).") +
              $"\n\n{dlg.FileName}");
     }
 
@@ -1550,7 +1551,7 @@ public partial class MainWindow : Window
     {
         var dlg = new OpenFileDialog
         {
-            Title = "Import session list",
+            Title = Loc.T("Import session list"),
             Filter = "Session Manager session list (*.smlist)|*.smlist|All files (*.*)|*.*",
         };
         if (dlg.ShowDialog(this) == true) ImportList(dlg.FileName);
@@ -1573,10 +1574,10 @@ public partial class MainWindow : Window
             Info("This list doesn't contain any sessions.");
             return;
         }
-        var description = $"\"{Path.GetFileName(file)}\" contains {sessionCount} session{(sessionCount == 1 ? "" : "s")}" +
-                          (folderCount > 0 ? $" in {folderCount} folder{(folderCount == 1 ? "" : "s")}" : "") +
-                          (model.Credentials.Count > 0 ? $" and {model.Credentials.Count} credential profile{(model.Credentials.Count == 1 ? "" : "s")}" : "") +
-                          (model.Passwords != null ? ", with protected passwords" : "") + ".";
+        var description = Loc.T($"\"{Path.GetFileName(file)}\" contains {sessionCount} session{(sessionCount == 1 ? "" : "s")}") +
+                          (folderCount > 0 ? Loc.T($" in {folderCount} folder{(folderCount == 1 ? "" : "s")}") : "") +
+                          (model.Credentials.Count > 0 ? Loc.T($" and {model.Credentials.Count} credential profile{(model.Credentials.Count == 1 ? "" : "s")}") : "") +
+                          (model.Passwords != null ? Loc.T(", with protected passwords") : "") + ".";
         var replace = Dialogs.ChooseImportMode(this, description);
         if (replace == null) return;
 
@@ -1638,8 +1639,8 @@ public partial class MainWindow : Window
             FilterBox_TextChanged(FilterBox, null!);
             if (result.AddedSessions.FirstOrDefault() is { } first) Select(first);
             Save();
-            Info($"Imported {result.Added} session{(result.Added == 1 ? "" : "s")}" +
-                 (result.Folders > 0 ? $" and {result.Folders} new folder{(result.Folders == 1 ? "" : "s")}" : "") + "." +
+            Info(Loc.T($"Imported {result.Added} session{(result.Added == 1 ? "" : "s")}") +
+                 (result.Folders > 0 ? Loc.T($" and {result.Folders} new folder{(result.Folders == 1 ? "" : "s")}") : "") + "." +
                  (result.Skipped > 0 ? $"\n\n{result.Skipped} session{(result.Skipped == 1 ? " was" : "s were")} already in your list and {(result.Skipped == 1 ? "was" : "were")} skipped." : "") +
                  (savedPasswords > 0 ? $"\n\n{savedPasswords} password{(savedPasswords == 1 ? "" : "s")} saved in Windows Credential Manager." : ""));
         }

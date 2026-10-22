@@ -272,6 +272,12 @@ public sealed class AppData
     public bool ManualOrder { get; set; }
     /// <summary>Green / red dots on sessions whose host answers / doesn't answer (checked about once a minute).</summary>
     public bool ShowStatus { get; set; } = true;
+    /// <summary>Look for a newer GitHub release when the app starts (at most once a day).</summary>
+    public bool CheckForUpdates { get; set; } = true;
+    /// <summary>"en", "lt", or empty to follow the Windows language.</summary>
+    public string Language { get; set; } = "";
+    /// <summary>When the last automatic update check ran (UTC).</summary>
+    public DateTime LastUpdateCheck { get; set; }
     /// <summary>SSH commands that can be sent to a terminal (and to all terminals with multi-exec).</summary>
     public List<SavedCommand> Commands { get; set; } = new();
 }

@@ -306,14 +306,14 @@ public sealed class SftpPanel : DockPanel, IDisposable
         var owner = Window.GetWindow(this);
         if (items.Count == 1 && !items[0].IsDirectory)
         {
-            var dlg = new SaveFileDialog { Title = "Download", FileName = items[0].Name };
+            var dlg = new SaveFileDialog { Title = Loc.T("Download"), FileName = items[0].Name };
             if (dlg.ShowDialog(owner) != true) return;
             var item = items[0];
             await Do("Downloading", c => DownloadFile(c, item.FullName, dlg.FileName, item.Length));
             SetStatus($"Downloaded {item.Name}");
             return;
         }
-        var folder = new OpenFolderDialog { Title = "Download to folder" };
+        var folder = new OpenFolderDialog { Title = Loc.T("Download to folder") };
         if (folder.ShowDialog(owner) != true) return;
         await Do("Downloading", c =>
         {

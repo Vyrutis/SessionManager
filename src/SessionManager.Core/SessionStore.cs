@@ -67,6 +67,7 @@ public sealed class SessionStore
         // Only the sessions go back in time; the look of the app stays as it is now.
         restored.Theme = Data.Theme;
         restored.Ui = Data.Ui;
+        restored.Language = Data.Language;
         Data = restored;
         Fill();
         Save();

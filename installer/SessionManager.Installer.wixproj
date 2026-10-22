@@ -2,6 +2,8 @@
   <!-- Builds SessionManager-<version>.msi from the published app. Run build.ps1 rather than building this directly. -->
   <PropertyGroup>
     <InstallerPlatform>x64</InstallerPlatform>
+    <!-- One MSI per language: English (the default) and Lithuanian. -->
+    <Cultures>en-US;lt-LT</Cultures>
     <Platform>x64</Platform>
     <OutputName>SessionManager-$(ProductVersion)</OutputName>
     <ProductVersion Condition="'$(ProductVersion)' == ''">1.0.0</ProductVersion>

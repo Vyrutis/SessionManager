@@ -1,0 +1,5 @@
+<WixLocalization Culture="en-US" xmlns="http://wixtoolset.org/schemas/v4/wxl">
+  <String Id="DowngradeError" Value="A newer version of Session Manager is already installed." />
+  <String Id="AboutText" Value="Session Manager - SSH and Remote Desktop sessions" />
+  <String Id="ShortcutDescription" Value="SSH and Remote Desktop sessions" />
+</WixLocalization>

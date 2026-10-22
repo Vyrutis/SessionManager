@@ -192,6 +192,29 @@ public partial class MainWindow
             ToolTip = "On: folders first, then sessions, by name. Off: the order you arrange by dragging (or Alt+Up / Alt+Down)." };
         sorted.Click += (_, _) => SetSortedByName(sorted.IsChecked);
         menu.Items.Add(sorted);
+        menu.Items.Add(new Separator());
+        var updates = new MenuItem { Header = "Check for updates on startup", IsCheckable = true, IsChecked = _store.Data.CheckForUpdates,
+            ToolTip = "Looks for a newer release on GitHub when the app starts (at most once a day)" };
+        updates.Click += (_, _) => { _store.Data.CheckForUpdates = updates.IsChecked; Save(); };
+        menu.Items.Add(updates);
+        var checkNow = new MenuItem { Header = "Check for updates now" };
+        checkNow.Click += async (_, _) => await CheckForUpdatesAsync(manual: true);
+        menu.Items.Add(checkNow);
+        menu.Items.Add(new Separator());
+        var language = new MenuItem { Header = "Language" };
+        foreach (var (code, label) in new[] { ("en", "English"), ("lt", "Lietuvių") })
+        {
+            var choice = new MenuItem { Header = label, IsCheckable = true, IsChecked = Loc.Resolve(_store.Data.Language) == code };
+            choice.Click += (_, _) =>
+            {
+                if (Loc.Resolve(_store.Data.Language) == code) { choice.IsChecked = true; return; }
+                _store.Data.Language = code;
+                Save();
+                MessageBox.Show(this, "The language changes the next time you start Session Manager.", "Session Manager", MessageBoxButton.OK, MessageBoxImage.Information);
+            };
+            language.Items.Add(choice);
+        }
+        menu.Items.Add(language);
         menu.IsOpen = true;
     }
 

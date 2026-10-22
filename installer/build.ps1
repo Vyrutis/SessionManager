@@ -1,4 +1,4 @@
-# Builds the Session Manager installer: artifacts\installer\SessionManager-<version>.msi
+# Builds the Session Manager installers: artifacts\installer\SessionManager-<version>.msi (English) and SessionManager-<version>-lt.msi (Lithuanian)
 # Usage:  powershell -ExecutionPolicy Bypass -File installer\build.ps1
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
@@ -21,5 +21,10 @@ dotnet build (Join-Path $PSScriptRoot 'SessionManager.Installer.wixproj') -c Rel
     "-p:ProductVersion=$version" "-p:PublishDir=$publish"
 if ($LASTEXITCODE -ne 0) { throw 'MSI build failed' }
 
-$msi = Join-Path $root "artifacts\installer\SessionManager-$version.msi"
+$out = Join-Path $root 'artifacts\installer'
+$msi = Join-Path $out "SessionManager-$version.msi"
+$msiLt = Join-Path $out "SessionManager-$version-lt.msi"
+Copy-Item (Join-Path $out "en-US\SessionManager-$version.msi") $msi -Force
+Copy-Item (Join-Path $out "lt-LT\SessionManager-$version.msi") $msiLt -Force
 Write-Host "Done: $msi ($([math]::Round((Get-Item $msi).Length / 1MB, 1)) MB)"
+Write-Host "      $msiLt"

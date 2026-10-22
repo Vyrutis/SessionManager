@@ -1,0 +1,5 @@
+<WixLocalization Culture="lt-LT" xmlns="http://wixtoolset.org/schemas/v4/wxl">
+  <String Id="DowngradeError" Value="Jau įdiegta naujesnė „Session Manager“ versija." />
+  <String Id="AboutText" Value="Session Manager – SSH ir nuotolinio darbalaukio sesijos" />
+  <String Id="ShortcutDescription" Value="SSH ir nuotolinio darbalaukio sesijos" />
+</WixLocalization>

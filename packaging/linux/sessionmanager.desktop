@@ -2,7 +2,9 @@
 Type=Application
 Name=Session Manager
 GenericName=SSH and Remote Desktop Manager
+GenericName[lt]=SSH ir nuotolinio darbalaukio tvarkytuvė
 Comment=SSH, Remote Desktop (RDP) and VNC connections in tabs, with SFTP and connection import
+Comment[lt]=SSH, nuotolinio darbalaukio (RDP) ir VNC ryšiai kortelėse, su SFTP ir ryšių importu
 Exec=sessionmanager %F
 Icon=sessionmanager
 Terminal=false

@@ -548,6 +548,24 @@ public static class Dialogs
         return replace.IsChecked == true;
     }
 
+    /// <summary>Announces a newer release with its notes; true = install it now.</summary>
+    public static bool PromptUpdate(Window? owner, ReleaseInfo release, Version current)
+    {
+        var notes = new TextBox
+        {
+            Text = release.Notes.Length > 0 ? release.Notes : Loc.T("No release notes."),
+            IsReadOnly = true, TextWrapping = TextWrapping.Wrap, AcceptsReturn = true,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Width = 420, Height = 160,
+        };
+        var dlg = Build(owner, "Update available",
+            $"Session Manager {release.Version.ToString(3)} is available (you have {current.ToString(3)}).",
+            notes, null, out var buttons);
+        ((Button)buttons.Children[0]).Content = release.MsiUrl != null ? "Update now" : "Open page";
+        ((Button)buttons.Children[1]).Content = "Later";
+        return dlg.ShowDialog() == true;
+    }
+
     private static Window Build(Window? owner, string title, string label, UIElement content, Func<Window, bool>? validate, out StackPanel buttons)
     {
         var okButton = new Button { Content = "OK", IsDefault = true, MinWidth = 80 };

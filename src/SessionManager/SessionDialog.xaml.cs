@@ -177,7 +177,7 @@ public partial class SessionDialog : Window
     {
         var dlg = new OpenFileDialog
         {
-            Title = "Choose private key",
+            Title = Loc.T("Choose private key"),
             Filter = "All files (*.*)|*.*",
             InitialDirectory = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ssh"),
         };

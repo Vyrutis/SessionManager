@@ -19,6 +19,15 @@ void Check(string name, bool ok, string detail = "")
     Console.WriteLine($"{(ok ? "PASS" : "FAIL")}  {name}{(ok || detail == "" ? "" : "  -> " + detail)}");
 }
 
+// Only the update and translation tests (quick): dotnet run -- --loc
+if (args.Contains("--loc"))
+{
+    UpdateCheckerTests.Run(Check);
+    LocTests.Run(Check);
+    Console.WriteLine($"{pass} passed, {fail} failed");
+    return fail == 0 ? 0 : 1;
+}
+
 // Child process for the WPF VNC tab test (see VncViewTests.RunIsolated).
 if (args.Contains("--vnc-wpf"))
 {
@@ -201,6 +210,8 @@ Check("single-session file is not taken as a list", Throws<InvalidDataException>
 
 ImportTests.Run(Check, dir);
 WebAndOrderTests.Run(Check, dir);
+UpdateCheckerTests.Run(Check);
+LocTests.Run(Check);
 await QolTests.Run(Check);
 VncViewTests.RunIsolated(Check);
 SessionListTests.RunIsolated(Check);
