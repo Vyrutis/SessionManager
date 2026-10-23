@@ -14,14 +14,15 @@ There are two apps built from one code base:
 | Saved passwords | Windows Credential Manager | desktop keyring (GNOME Keyring, KWallet, KeePassXC) via Secret Service |
 | Screenshot / PDF scan | Windows text recognition | [Tesseract](https://github.com/tesseract-ocr/tesseract) + poppler |
 | Installer | `.msi` | Arch package (`PKGBUILD`) or tarball with `install.sh` |
-| Version in this branch | 1.3.3 | 1.4.0 |
-| Latest release download | [v1.3.3](../../releases/tag/v1.3.3) | [v1.2.0](../../releases/tag/v1.2.0) (no VNC yet) |
+| Version in this branch | 1.4.1 | 1.4.0 |
+| Latest release download | [v1.4.1](../../releases/tag/v1.4.1) | [v1.2.0](../../releases/tag/v1.2.0) (no VNC yet) |
 
-VNC is new in Windows 1.2.0 / Linux 1.3.0, and the SSH / RDP / VNC list tabs with multiple selection in Windows 1.3.0 / Linux 1.4.0. Windows 1.3.0 also adds web sessions, arranging the list by dragging, favourites, online dots, Wake-on-LAN, saved commands and daily backups, 1.3.1 shows only the tab icons when the list is narrow, and 1.3.2 adds Connect as (pick a saved user), a More submenu in the session menu, a "Login failed" dialog that offers saved credentials or a typed password, and a cleaner, more consistent look; 1.3.3 makes the corner icon follow the theme. These Windows features are in the v1.3.3 release; the Linux ones are not released yet, so build those from source: [Windows](#build), [Arch](#install-on-arch-from-source-includes-vnc).
+VNC is new in Windows 1.2.0 / Linux 1.3.0, and the SSH / RDP / VNC list tabs with multiple selection in Windows 1.3.0 / Linux 1.4.0. Windows 1.3.0 also adds web sessions, arranging the list by dragging, favourites, online dots, Wake-on-LAN, saved commands and daily backups, 1.3.1 shows only the tab icons when the list is narrow, and 1.3.2 adds Connect as (pick a saved user), a More submenu in the session menu, a "Login failed" dialog that offers saved credentials or a typed password, and a cleaner, more consistent look; 1.3.3 makes the corner icon follow the theme. Windows 1.4.0 adds the update check and a Lithuanian version, and 1.4.1 is a security release (see [Security](#security)). These Windows features are in the v1.4.1 release; the Linux ones are not released yet, so build those from source: [Windows](#build), [Arch](#install-on-arch-from-source-includes-vnc).
 
 Both use [SSH.NET](https://github.com/sshnet/SSH.NET) and .NET 10, and read and write the same session files, so a list exported on one runs on the other.
 
 - [Features](#features)
+- [Security](#security): what is protected and what is not
 - [Windows](#windows): install, build
 - [Linux / Arch](#linux--arch): install, what to install alongside it, desktop notes
 - [Building and developing on Linux](#building-and-developing-on-linux): step by step from a fresh clone
@@ -48,11 +49,12 @@ Both use [SSH.NET](https://github.com/sshnet/SSH.NET) and .NET 10, and read and 
 ### SSH
 - A full terminal with 256 and 24-bit colors, scrollback, search (Ctrl+Shift+F), clickable links (Ctrl+click on Linux), copy/paste (Ctrl+Shift+C / Ctrl+Shift+V) and resizing. Full-screen programs (vim, htop, mc, tmux) work, including mouse support. Several color schemes (Campbell, One Dark, Dracula, Solarized, Gruvbox, Nord), or "Auto" to follow the app theme.
 - **SFTP file panel** next to the terminal: browse, upload (also by dropping files on it), download, rename, delete, and edit a remote file in your editor with upload on save.
-- **Port forwarding:** local (`L 8080:db:5432`), remote (`R 9000:localhost:3000`) and dynamic SOCKS (`D 1080`).
+- **Port forwarding:** local (`L 8080:db:5432`), remote (`R 9000:localhost:3000`) and dynamic SOCKS (`D 1080`). Forwards listen on this computer only (127.0.0.1), so other machines on the network can't use them.
 - **Jump hosts.** Reach a server (SSH, RDP or VNC) through another SSH session.
 - **Private key** authentication (`~/.ssh/id_ed25519`, `id_ecdsa`, `id_rsa` are tried automatically).
-- **Host key checking.** Remembers fingerprints and warns when a server's key changes.
-- **Multi-exec.** Send what you type to several SSH tabs at once.
+- **Host key checking.** Remembers fingerprints and warns when a server's key changes. If the remembered-keys file can't be read, connections are refused instead of trusting every server again.
+- **Modern algorithms only.** Old key exchange, cipher, MAC and host key algorithms (SHA-1 based, CBC, 3DES, DSA and similar) are not offered, so a very old device may need its SSH settings updated.
+- **Multi-exec.** Send what you type to several SSH tabs at once. Sending asks for confirmation first.
 - **Saved commands** (Windows). Right-click an SSH tab → *Send command*: commands you save once and send with a click, to every included tab when multi-exec is on.
 
 ### Web pages of devices (Windows)
@@ -64,7 +66,7 @@ Both use [SSH.NET](https://github.com/sshnet/SSH.NET) and .NET 10, and read and 
 
 ### Remote Desktop
 - Fit to the window or a fixed resolution, color depth and scaling.
-- Clipboard, drive (home folder on Linux) and printer redirection.
+- Clipboard, drive (home folder on Linux) and printer redirection. Clipboard redirection is off by default (turn it on per session) so a remote computer can't read what you copy.
 - Domain support. Domains you use are offered before the user name.
 
 ### VNC
@@ -84,7 +86,7 @@ Both use [SSH.NET](https://github.com/sshnet/SSH.NET) and .NET 10, and read and 
 - **Credential profiles.** One user name and password shared by many sessions; change it once and every session uses the new one.
 
 ### Import and export
-- **Session lists** (`.smlist`) hold the whole tree or one folder, with credential profiles. Saved passwords can be included, encrypted with a passphrase you choose. On import you can merge (duplicates are skipped) or replace.
+- **Session lists** (`.smlist`) hold the whole tree or one folder, with credential profiles. Saved passwords can be included, encrypted with a passphrase you choose. The rest of the file (host names, users, folders) is plain text, so keep exports somewhere safe and delete them after use. On import you can merge (duplicates are skipped) or replace.
 - **Single sessions** as `.smsession` files, `.rdp` files in both directions, and `.vnc` files (UltraVNC, TightVNC, RealVNC) for import.
 - **Import from other tools.** Hosts, ports, users, domains and folders are imported. Passwords that other programs keep encrypted are not read; you can type them in the review screen.
 
@@ -114,6 +116,21 @@ Both use [SSH.NET](https://github.com/sshnet/SSH.NET) and .NET 10, and read and 
 - Light and dark themes, switched from the toolbar.
 - Accent color (presets or any hex color) and interface size, 80–150 %.
 - Windows only: main color, background picture, close animation.
+
+## Security
+
+What the Windows app (1.4.1) does to protect your data and connections:
+
+- **Passwords** are never in the app's files; they are in Windows Credential Manager (Linux: the desktop keyring).
+- **Data files are encrypted** (sessions, daily backups, remembered server keys): by default with your Windows account key, optionally with a master password (AES-256-GCM, PBKDF2-SHA256 with 300,000 rounds). A damaged or edited file is detected and refused. Without a master password, another program running as you can still open the files.
+- **Updates are opt-in**, come only from this project's GitHub releases over https, and are installed only when GitHub's SHA-256 matches the download. The installer is not code-signed yet.
+- **SSH** uses modern algorithms only, remembers host keys and refuses to connect if that record can't be read, and tunnels listen on 127.0.0.1 only.
+- **RDP** uses network-level authentication; **web sessions** trust a self-signed certificate only after you confirm that exact certificate; **VNC** shows when a connection is not encrypted.
+- **Clipboard redirection** to remote desktops is off by default.
+- **Imports** reject files with XML external entities, and multi-exec asks before sending to several tabs.
+- **The error log** is limited in size and rotated.
+
+Not covered: the Linux app keeps its files as plain text for now; VNC itself has no encryption (use an SSH gateway); there is no audit log or per-user access control; files an older version left behind, and exported `.smlist` files, are not encrypted.
 
 ## Windows
 
