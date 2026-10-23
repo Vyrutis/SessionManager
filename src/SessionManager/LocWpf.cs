@@ -16,8 +16,11 @@ public static class LocWpf
         {
             if (File.Exists(SessionStore.FilePath))
             {
-                using var doc = JsonDocument.Parse(File.ReadAllText(SessionStore.FilePath));
-                if (doc.RootElement.TryGetProperty("Language", out var l) && l.ValueKind == JsonValueKind.String) setting = l.GetString();
+                if (DataProtector.TryReadWithoutPassword(SessionStore.FilePath) is { } text)
+                {
+                    using var doc = JsonDocument.Parse(text);
+                    if (doc.RootElement.TryGetProperty("Language", out var l) && l.ValueKind == JsonValueKind.String) setting = l.GetString();
+                }
             }
         }
         catch { /* unreadable settings: follow Windows */ }

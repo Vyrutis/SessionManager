@@ -331,7 +331,9 @@ public sealed class WebSessionView : Grid, ISessionView
     private void OnBasicAuthentication(object? sender, CoreWebView2BasicAuthenticationRequestedEventArgs e)
     {
         var s = _request.Settings;
-        if (!_authTried && !string.IsNullOrEmpty(_request.Password))
+        // The saved login goes only to the session's own device; any other host that asks (a redirect, an embedded page) gets a prompt.
+        var askingHost = Uri.TryCreate(e.Uri, UriKind.Absolute, out var asking) ? asking.Host.Trim('[', ']') : "";
+        if (!_authTried && !string.IsNullOrEmpty(_request.Password) && askingHost.Equals(_targetHost, StringComparison.OrdinalIgnoreCase))
         {
             _authTried = true;
             e.Response.UserName = s.Username;
@@ -393,6 +395,11 @@ public sealed class WebSessionView : Grid, ISessionView
         var page = Uri.TryCreate(_web.CoreWebView2.Source, UriKind.Absolute, out var uri) ? uri.Host.Trim('[', ']') : "";
         if (!page.Equals(_targetHost, StringComparison.OrdinalIgnoreCase) &&
             MessageBox.Show(Window.GetWindow(this), $"This page is on {page}, not on {_request.Settings.Host}.\n\nFill in the login for {_request.Session.Name} anyway?",
+                "Fill login", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes)
+            return;
+
+        if (!_web.CoreWebView2.Source.StartsWith("https:", StringComparison.OrdinalIgnoreCase) &&
+            MessageBox.Show(Window.GetWindow(this), "This page is not encrypted (http). The password would travel over the network in clear text.\n\nFill in the login anyway?",
                 "Fill login", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes)
             return;
 

@@ -3,7 +3,11 @@ using System.Text.Json;
 namespace SessionManager;
 
 /// <summary>A newer release on GitHub, with its notes and the installer (.msi) to download.</summary>
-public sealed record ReleaseInfo(Version Version, string Tag, string Notes, string PageUrl, string? MsiName, string? MsiUrl);
+public sealed record ReleaseInfo(Version Version, string Tag, string Notes, string PageUrl, string? MsiName, string? MsiUrl, string? MsiSha256 = null)
+{
+    /// <summary>The installer can be installed from the app only when GitHub published its SHA-256, so the download can be checked.</summary>
+    public bool CanInstall => MsiUrl != null && MsiSha256 != null;
+}
 
 /// <summary>Looks up the latest GitHub release and compares it with the running version.</summary>
 public static class UpdateChecker
@@ -45,7 +49,7 @@ public static class UpdateChecker
         var tag = Str(root, "tag_name");
         if (!TryParseVersion(tag, out var version)) return null;
 
-        string? msiName = null, msiUrl = null;
+        string? msiName = null, msiUrl = null, msiHash = null;
         if (root.TryGetProperty("assets", out var assets) && assets.ValueKind == JsonValueKind.Array)
         {
             foreach (var a in assets.EnumerateArray())
@@ -57,13 +61,14 @@ public static class UpdateChecker
                 {
                     msiName = name;
                     msiUrl = url;
+                    msiHash = ParseDigest(Str(a, "digest"));
                     break;
                 }
             }
         }
         var page = Str(root, "html_url");
         if (!IsHttps(page, out var pageUri) || !pageUri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase)) page = $"https://github.com/{Repo}/releases/latest";
-        return new ReleaseInfo(version, tag, Str(root, "body").Trim(), page, msiName, msiUrl);
+        return new ReleaseInfo(version, tag, Str(root, "body").Trim(), page, msiName, msiUrl, msiHash);
     }
 
     /// <summary>Parses "v1.3.3" or "1.3.3" (an optional suffix like "-beta" is ignored).</summary>
@@ -89,6 +94,22 @@ public static class UpdateChecker
     private static bool IsTrustedDownload(string url) =>
         IsHttps(url, out var u) && (u.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) || u.Host.EndsWith(".githubusercontent.com", StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>"sha256:ab12…" (as GitHub lists it for release files) → lower-case hex; null for anything else.</summary>
+    public static string? ParseDigest(string? digest)
+    {
+        const string prefix = "sha256:";
+        if (digest == null || !digest.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return null;
+        var hex = digest[prefix.Length..].Trim().ToLowerInvariant();
+        return hex.Length == 64 && hex.All(Uri.IsHexDigit) ? hex : null;
+    }
+
+    /// <summary>True when the file's SHA-256 is <paramref name="sha256"/>.</summary>
+    public static bool Verify(string path, string sha256)
+    {
+        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(fs)).Equals(sha256, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static Version Normalize(Version v) => new(v.Major, v.Minor, Math.Max(v.Build, 0), Math.Max(v.Revision, 0));
 
     private static string Str(JsonElement e, string name) =>
@@ -98,7 +119,9 @@ public static class UpdateChecker
     public static async Task<string> DownloadAsync(ReleaseInfo release, IProgress<double>? progress = null, CancellationToken cancel = default)
     {
         if (release.MsiUrl == null || release.MsiName == null) throw new InvalidOperationException("This release has no installer attached.");
-        var dir = Path.Combine(Path.GetTempPath(), "SessionManagerUpdate");
+        if (release.MsiSha256 == null) throw new InvalidOperationException("GitHub did not publish a checksum for this installer, so it can't be checked.");
+        // A folder in the user's own profile (not %TEMP%), so other programs have a harder time swapping the file.
+        var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SessionManager", "Update");
         Directory.CreateDirectory(dir);
         var path = Path.Combine(dir, $"SessionManager-{release.Version.ToString(3)}.msi");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancel);
@@ -120,6 +143,11 @@ public static class UpdateChecker
                 done += n;
                 if (total > 0) progress?.Report((double)done / total);
             }
+        }
+        if (!Verify(path, release.MsiSha256))
+        {
+            try { File.Delete(path); } catch { }
+            throw new InvalidDataException("The downloaded installer does not match the checksum GitHub published, so it was deleted.");
         }
         return path;
     }

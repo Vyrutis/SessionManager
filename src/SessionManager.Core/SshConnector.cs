@@ -94,6 +94,7 @@ public static class SshConnector
             }
 
             var info = new ConnectionInfo(host, port, s.Username, methods.ToArray()) { Timeout = TimeSpan.FromSeconds(15) };
+            DropWeakAlgorithms(info);
             var client = create(info);
             // Verify against the real host name, even when connecting through a forwarded local port.
             client.HostKeyReceived += (_, e) => e.CanTrust = VerifyHostKey(ui, s.Host, s.Port, e);
@@ -132,6 +133,24 @@ public static class SshConnector
                 client.Dispose();
                 throw;
             }
+        }
+    }
+
+    /// <summary>Algorithms that are broken or obsolete; the server must offer something better.</summary>
+    private static readonly string[] WeakAlgorithms =
+    [
+        "diffie-hellman-group1-sha1", "arcfour", "arcfour128", "arcfour256", "blowfish-cbc", "cast128-cbc", "ssh-dss",
+        "hmac-md5", "hmac-md5-96", "hmac-sha1-96",
+    ];
+
+    public static void DropWeakAlgorithms(ConnectionInfo info)
+    {
+        foreach (var name in WeakAlgorithms)
+        {
+            info.KeyExchangeAlgorithms.Remove(name);
+            info.Encryptions.Remove(name);
+            info.HmacAlgorithms.Remove(name);
+            info.HostKeyAlgorithms.Remove(name);
         }
     }
 
@@ -197,10 +216,12 @@ public static class SshConnector
         {
             case 'L' or 'R' when parts.Length is 3 or 4:
                 var bind = parts.Length == 4 ? parts[0] : "127.0.0.1";
+                if (kind == 'L' && !IsLoopback(bind)) throw NotLoopback(line);
                 int o = parts.Length - 3;
                 if (parts[o + 1].Length == 0) throw new FormatException($"\"{line}\": missing destination host.");
                 return new Tunnel(kind, bind, Port(parts[o], line), parts[o + 1], Port(parts[o + 2], line));
             case 'D' when parts.Length is 1 or 2:
+                if (parts.Length == 2 && !IsLoopback(parts[0])) throw NotLoopback(line);
                 return new Tunnel('D', parts.Length == 2 ? parts[0] : "127.0.0.1", Port(parts[^1], line), "", 0);
             case 'L' or 'R':
                 throw new FormatException($"\"{line}\": use {kind} port:host:port, e.g. {kind} 8080:localhost:80.");
@@ -210,6 +231,12 @@ public static class SshConnector
                 throw new FormatException($"\"{line}\": the type must be L (local), R (remote) or D (dynamic/SOCKS).");
         }
     }
+
+    /// <summary>Local and SOCKS listeners may only be opened on this PC; opening them to the network would hand the tunnel to anyone who can reach it.</summary>
+    private static bool IsLoopback(string bind) => bind.ToLowerInvariant() is "127.0.0.1" or "localhost";
+
+    private static FormatException NotLoopback(string line) =>
+        new($"\"{line}\": local and dynamic tunnels can only listen on this PC (127.0.0.1 or localhost), not on the network.");
 
     /// <summary>Starts the session's port forwards; failures are logged, not thrown.</summary>
     public static void StartTunnels(SshClient client, IEnumerable<string> lines, SshUi ui)
@@ -285,7 +312,9 @@ public static class SshConnector
             var ki = new KeyboardInteractiveAuthenticationMethod(user);
             ki.AuthenticationPrompt += (_, e) =>
             {
-                foreach (var p in e.Prompts) p.Response = password;
+                // The password goes to password prompts only (a lone hidden prompt counts as one); one-time codes and other questions get an empty answer.
+                foreach (var p in e.Prompts)
+                    p.Response = p.Request.Contains("pass", StringComparison.OrdinalIgnoreCase) || (!p.IsEchoed && e.Prompts.Count() == 1) ? password : "";
             };
             methods.Add(ki);
         }
@@ -305,11 +334,19 @@ public static class SshConnector
     private static bool VerifyHostKey(SshUi ui, string host, int port, HostKeyEventArgs e)
     {
         var fp = "SHA256:" + e.FingerPrintSHA256;
-        var result = KnownHosts.Check(host, port, e.HostKeyName, fp, out var stored);
-        if (result == KnownHosts.Result.Match) return true;
-        if (!ui.ConfirmHostKey(new HostKeyQuestion(host, port, e.HostKeyName, fp, result == KnownHosts.Result.Changed ? stored : null)))
-            return false;
-        KnownHosts.Trust(host, port, e.HostKeyName, fp);
-        return true;
+        try
+        {
+            var result = KnownHosts.Check(host, port, e.HostKeyName, fp, out var stored);
+            if (result == KnownHosts.Result.Match) return true;
+            if (!ui.ConfirmHostKey(new HostKeyQuestion(host, port, e.HostKeyName, fp, result == KnownHosts.Result.Changed ? stored : null)))
+                return false;
+            KnownHosts.Trust(host, port, e.HostKeyName, fp);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            ui.Post(() => ui.Log(ex.Message, LogKind.Error));
+            return false; // without a readable list of remembered keys nothing is trusted
+        }
     }
 }

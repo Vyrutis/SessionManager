@@ -41,6 +41,12 @@ public partial class App : Application
             ex.Handled = true;
         };
 
+        if (!Unlock())
+        {
+            Shutdown();
+            return;
+        }
+
         LocWpf.Start();
         SessionEnding += (_, _) => IsSessionEnding = true;
         base.OnStartup(e);
@@ -49,6 +55,32 @@ public partial class App : Application
         window.Show();
         if (openId != null) window.OpenById(openId.Value);
         _ = ListenAsync();
+    }
+
+    /// <summary>Asks for the master password (if one is set) before the sessions are read. False if the user cancels.</summary>
+    private bool Unlock()
+    {
+        DataProtector.AskPassword = UnlockPrompt.Ask;
+        if (!DataProtector.NeedsPassword(SessionStore.FilePath)) return true;
+        var mode = ShutdownMode;
+        ShutdownMode = ShutdownMode.OnExplicitShutdown; // the prompt must not count as the main window
+        try
+        {
+            DataProtector.Unprotect(File.ReadAllBytes(SessionStore.FilePath));
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException)
+        {
+            return true; // the normal load reports it
+        }
+        finally
+        {
+            ShutdownMode = mode;
+        }
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -116,7 +148,9 @@ public partial class App : Application
         try
         {
             Directory.CreateDirectory(SessionStore.DataDir);
-            File.AppendAllText(Path.Combine(SessionStore.DataDir, "error.log"), $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {ex}\n\n");
+            var log = Path.Combine(SessionStore.DataDir, "error.log");
+            if (File.Exists(log) && new FileInfo(log).Length > 1_000_000) File.Move(log, log + ".old", overwrite: true);
+            File.AppendAllText(log, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {ex}\n\n");
         }
         catch { }
     }

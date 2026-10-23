@@ -256,7 +256,9 @@ public static class ConnectionImport
     public static List<ImportedConnection> FromMRemoteNG(string path)
     {
         var list = new List<ImportedConnection>();
-        var doc = XDocument.Load(path);
+        // A file from elsewhere: no DTDs, so no entity tricks.
+        using var xml = System.Xml.XmlReader.Create(path, new System.Xml.XmlReaderSettings { DtdProcessing = System.Xml.DtdProcessing.Prohibit, XmlResolver = null });
+        var doc = XDocument.Load(xml);
         if (doc.Root?.Attribute("FullFileEncryption")?.Value.Equals("true", StringComparison.OrdinalIgnoreCase) == true)
             throw new InvalidDataException("This mRemoteNG file is fully encrypted. In mRemoteNG, turn off \"Encrypt complete connection file\" and save it again, or export it as CSV.");
         foreach (var node in doc.Descendants("Node"))

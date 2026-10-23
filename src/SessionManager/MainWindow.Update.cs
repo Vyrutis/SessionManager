@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using System.Reflection;
 using System.Windows;
 
@@ -47,7 +48,7 @@ public partial class MainWindow
                 return;
             }
             if (!Dialogs.PromptUpdate(this, release, current)) return;
-            if (release.MsiUrl == null)
+            if (!release.CanInstall)
             {
                 Process.Start(new ProcessStartInfo(release.PageUrl) { UseShellExecute = true });
                 return;
@@ -78,8 +79,20 @@ public partial class MainWindow
         finally { Title = oldTitle; }
 
         // Close the window first (it asks about open connections and can be cancelled); the installer starts only once the app is gone.
-        void Install(object? s, EventArgs e) =>
-            Process.Start(new ProcessStartInfo("msiexec.exe", $"/i \"{msi}\" /passive /norestart") { UseShellExecute = true });
+        void Install(object? s, EventArgs e)
+        {
+            // Checked again right before it runs, in case the file was replaced while the app was closing.
+            try
+            {
+                if (release.MsiSha256 == null || !UpdateChecker.Verify(msi, release.MsiSha256))
+                    throw new InvalidDataException("The installer no longer matches its checksum.");
+                Process.Start(new ProcessStartInfo("msiexec.exe", $"/i \"{msi}\" /passive /norestart") { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("The update was not installed: " + ex.Message + "\n\nDownload it from " + release.PageUrl, "Session Manager", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
         Closed += Install;
         Close();
         if (!_closeAnimationDone) Closed -= Install; // cancelled

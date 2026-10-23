@@ -197,6 +197,13 @@ public partial class MainWindow
             ToolTip = "Looks for a newer release on GitHub when the app starts (at most once a day)" };
         updates.Click += (_, _) => { _store.Data.CheckForUpdates = updates.IsChecked; Save(); };
         menu.Items.Add(updates);
+        if (OperatingSystem.IsWindows())
+        {
+            var master = new MenuItem { Header = "Master password...",
+                ToolTip = "Your sessions are always encrypted for your Windows account. A master password adds a password prompt at startup, so the files stay unreadable even if someone uses your account." };
+            master.Click += (_, _) => ChangeMasterPassword();
+            menu.Items.Add(master);
+        }
         var checkNow = new MenuItem { Header = "Check for updates now" };
         checkNow.Click += async (_, _) => await CheckForUpdatesAsync(manual: true);
         menu.Items.Add(checkNow);

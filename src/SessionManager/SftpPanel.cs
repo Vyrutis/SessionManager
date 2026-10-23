@@ -45,6 +45,8 @@ public sealed class SftpPanel : DockPanel, IDisposable
     private readonly TextBlock _status = new() { Margin = new Thickness(8, 4, 8, 5), TextTrimming = TextTrimming.CharacterEllipsis, FontSize = 11.5 };
     private readonly SemaphoreSlim _busy = new(1, 1);
     private readonly List<FileSystemWatcher> _watchers = new();
+    private readonly List<string> _editDirs = new();
+    private static string EditRoot => Path.Combine(Path.GetTempPath(), "SessionManager", "edit");
 
     private Func<Task<SftpClient>>? _connect;
     private SftpClient? _sftp;
@@ -344,8 +346,10 @@ public sealed class SftpPanel : DockPanel, IDisposable
     /// <summary>Downloads a copy, opens it in Notepad and offers to upload it again whenever it is saved.</summary>
     private async Task EditInNotepad(RemoteItem item)
     {
-        var dir = Path.Combine(Path.GetTempPath(), "SessionManager", "edit", Guid.NewGuid().ToString("N")[..8]);
+        DeleteOldEditCopies();
+        var dir = Path.Combine(EditRoot, Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(dir);
+        _editDirs.Add(dir);
         var local = Path.Combine(dir, SafeFileName(item.Name));
         if (!await Do("Downloading", c => DownloadFile(c, item.FullName, local, item.Length))) return;
         SetStatus($"Editing {item.Name} — save in Notepad to upload it again");
@@ -378,6 +382,18 @@ public sealed class SftpPanel : DockPanel, IDisposable
 
         try { Process.Start(new ProcessStartInfo("notepad.exe", $"\"{local}\"") { UseShellExecute = false }); }
         catch (Exception ex) { SetStatus(ex.Message); }
+    }
+
+    /// <summary>Copies of remote files are removed when the panel closes; this also clears the ones an earlier crash left behind.</summary>
+    private static void DeleteOldEditCopies()
+    {
+        try
+        {
+            if (!Directory.Exists(EditRoot)) return;
+            foreach (var d in Directory.GetDirectories(EditRoot))
+                if (Directory.GetCreationTimeUtc(d) < DateTime.UtcNow.AddDays(-1)) try { Directory.Delete(d, true); } catch { }
+        }
+        catch { }
     }
 
     /// <summary>Runs an operation and reports failures; returns false if it failed.</summary>
@@ -531,6 +547,7 @@ public sealed class SftpPanel : DockPanel, IDisposable
         _disposed = true;
         foreach (var w in _watchers) w.Dispose();
         _watchers.Clear();
+        _editDirs.Clear(); // the copies stay (an editor may still hold unsaved changes) and are removed after a day
         Detach();
     }
 }

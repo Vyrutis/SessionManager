@@ -43,6 +43,9 @@ public sealed class VncClient : IDisposable
     public int Width { get; private set; }
     public int Height { get; private set; }
     public string DesktopName { get; private set; } = "";
+
+    /// <summary>True when the server let us in with no password at all.</summary>
+    public bool NoPassword { get; private set; }
     /// <summary>"3.8" etc.: the protocol version both sides agreed on.</summary>
     public string Version => $"3.{_minor}";
     /// <summary>The screen, Width × Height. Lock <see cref="FrameLock"/> while reading it; it is replaced when the desktop is resized.</summary>
@@ -152,6 +155,7 @@ public sealed class VncClient : IDisposable
             else throw new NotSupportedException(Unsupported(types));
             await WriteAsync([(byte)type], cancel);
         }
+        NoPassword = type == 1;
         if (type is not (1 or 2)) throw new NotSupportedException(Unsupported([(byte)Math.Min(type, 255)]));
 
         if (type == 2)

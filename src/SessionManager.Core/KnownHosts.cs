@@ -6,7 +6,7 @@ namespace SessionManager;
 /// <summary>Remembers SSH host key fingerprints so a changed key (possible man-in-the-middle) is detected.</summary>
 public static class KnownHosts
 {
-    private static readonly string FilePath = Path.Combine(SessionStore.DataDir, "known_hosts.json");
+    internal static readonly string FilePath = Path.Combine(SessionStore.DataDir, "known_hosts.json");
     private static readonly object Lock = new();
 
     public enum Result { Match, Unknown, Changed }
@@ -30,21 +30,21 @@ public static class KnownHosts
             var all = Load();
             all[Key(host, port)] = $"{keyType} {fingerprint}";
             Directory.CreateDirectory(SessionStore.DataDir);
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(all, new JsonSerializerOptions { WriteIndented = true }));
+            DataProtector.WriteAll(FilePath, JsonSerializer.Serialize(all, new JsonSerializerOptions { WriteIndented = true }));
         }
     }
 
+    /// <exception cref="InvalidDataException">The file exists but can't be read. Connections are refused rather than starting over with no remembered keys.</exception>
     private static Dictionary<string, string> Load()
     {
+        if (!File.Exists(FilePath)) return new();
         try
         {
-            if (File.Exists(FilePath))
-                return JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(FilePath)) ?? new();
+            return JsonSerializer.Deserialize<Dictionary<string, string>>(DataProtector.ReadAll(FilePath)) ?? throw new JsonException("The file is empty.");
         }
-        catch
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException or InvalidDataException)
         {
-            // Treat an unreadable file as empty; the user will be asked to confirm keys again.
+            throw new InvalidDataException($"The remembered server keys ({FilePath}) can't be read: {ex.Message}\nRepair or delete that file to connect again.", ex);
         }
-        return new();
     }
 }

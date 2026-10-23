@@ -177,8 +177,9 @@ public sealed class RdpView : Grid, ISessionView
             Try(() => ocx.AdvancedSettings2.RedirectDrives = s.RedirectDrives);
             Try(() => ocx.AdvancedSettings2.RedirectPrinters = s.RedirectPrinters);
             Try(() => ocx.AdvancedSettings6.RedirectClipboard = s.RedirectClipboard);
-            Try(() => ocx.AdvancedSettings7.EnableCredSspSupport = true);
-            Try(() => ocx.AdvancedSettings5.AuthenticationLevel = 2); // warn if the server can't be authenticated
+            // Security settings must apply; if the control can't take them the connection is not made (no silent downgrade).
+            ocx.AdvancedSettings7.EnableCredSspSupport = true;
+            ocx.AdvancedSettings5.AuthenticationLevel = 2; // warn if the server can't be authenticated
             Try(() => ocx.AdvancedSettings2.EnableAutoReconnect = true);
             Try(() => ocx.AdvancedSettings2.allowBackgroundInput = 1);
             Try(() => ocx.SecuredSettings3.KeyboardHookMode = 1); // Alt+Tab, Win key etc. go to the remote PC

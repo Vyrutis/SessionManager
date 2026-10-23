@@ -6,7 +6,7 @@ namespace SessionManager;
 
 /// <summary>
 /// A copy of sessions.json once a day in Backups\ (the newest 30 are kept), so a mistake can be undone.
-/// Passwords are in Windows Credential Manager / the keyring, not in these files.
+/// Passwords are in Windows Credential Manager / the keyring, not in these files. The copies are encrypted like sessions.json.
 /// </summary>
 public static class SessionBackup
 {
@@ -42,7 +42,7 @@ public static class SessionBackup
             int sessions = 0, folders = 0;
             try
             {
-                var data = JsonSerializer.Deserialize<AppData>(File.ReadAllText(f), SessionStore.JsonOptions);
+                var data = JsonSerializer.Deserialize<AppData>(DataProtector.TryReadWithoutPassword(f) ?? throw new InvalidDataException("locked"), SessionStore.JsonOptions);
                 var nodes = (data?.Roots ?? new()).Where(r => r != null).SelectMany(r => r.Descendants()).ToList();
                 sessions = nodes.Count(n => n.IsSession);
                 folders = nodes.Count(n => n.IsFolder);

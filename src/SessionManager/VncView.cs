@@ -220,7 +220,9 @@ public sealed class VncView : Grid, ISessionView
     private void UpdateInfo()
     {
         if (_client is not { } c) return;
-        _info.Text = $"{(c.DesktopName.Length > 0 ? c.DesktopName : _request.Settings.Host)} · {c.Width}×{c.Height}";
+        _info.Text = $"{(c.DesktopName.Length > 0 ? c.DesktopName : _request.Settings.Host)} · {c.Width}×{c.Height}" +
+                     (c.NoPassword ? " · no password" : "") + (_request.Jump == null ? " · not encrypted" : "");
+        _info.ToolTip = _request.Jump != null ? null : "VNC itself is not encrypted: the screen, keystrokes and password can be read on the network. Use an SSH gateway (jump host) for the session to tunnel it through SSH.";
     }
 
     /// <summary>Asks for the VNC password (after a failed attempt, with the reason); null = cancelled. Runs on the UI thread.</summary>

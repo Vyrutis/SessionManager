@@ -38,7 +38,7 @@ public sealed class SessionSettings
     public int Width { get; set; }
     public int Height { get; set; }
     public int ColorDepth { get; set; } = 32;
-    public bool RedirectClipboard { get; set; } = true;
+    public bool RedirectClipboard { get; set; }
     public bool RedirectDrives { get; set; }
     public bool RedirectPrinters { get; set; }
     /// <summary>RDP: scale the remote desktop to the tab. VNC: scale to fit (off = actual size with scroll bars).</summary>
@@ -272,8 +272,8 @@ public sealed class AppData
     public bool ManualOrder { get; set; }
     /// <summary>Green / red dots on sessions whose host answers / doesn't answer (checked about once a minute).</summary>
     public bool ShowStatus { get; set; } = true;
-    /// <summary>Look for a newer GitHub release when the app starts (at most once a day).</summary>
-    public bool CheckForUpdates { get; set; } = true;
+    /// <summary>Look for a newer GitHub release when the app starts (at most once a day). Off unless the user turns it on; "Check for updates now" always works.</summary>
+    public bool CheckForUpdates { get; set; }
     /// <summary>"en", "lt", or empty to follow the Windows language.</summary>
     public string Language { get; set; } = "";
     /// <summary>When the last automatic update check ran (UTC).</summary>

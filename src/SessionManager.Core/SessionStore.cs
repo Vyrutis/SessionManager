@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -32,7 +33,10 @@ public sealed class SessionStore
 
     public Node RootFor(Protocol p) => Data.Roots.First(r => r.Protocol == p);
 
-    /// <summary>Returns a warning message if the existing file could not be read.</summary>
+    /// <summary>
+    /// Returns a warning message if the existing file could not be read.
+    /// Throws <see cref="OperationCanceledException"/> when the master password prompt is cancelled (nothing is changed on disk).
+    /// </summary>
     public string? Load()
     {
         string? warning = null;
@@ -40,8 +44,20 @@ public sealed class SessionStore
         {
             try
             {
-                Data = JsonSerializer.Deserialize<AppData>(File.ReadAllText(FilePath), JsonOptions) ?? new AppData();
+                var raw = File.ReadAllBytes(FilePath);
+                var text = Encoding.UTF8.GetString(DataProtector.Unprotect(raw));
+                Data = JsonSerializer.Deserialize<AppData>(text, JsonOptions) ?? new AppData();
+                DataProtector.Adopt(raw);
+                if (!DataProtector.IsProtected(raw) && DataProtector.Mode != ProtectionMode.None)
+                {
+                    // A file from an older version: protect it (and the backups) now. The check that it reads back happens before it replaces anything.
+                    try { Fill(); Save(); ProtectOldFiles(); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or System.Security.Cryptography.CryptographicException) { warning = "Your sessions could not be encrypted: " + ex.Message; }
+                }
                 try { SessionBackup.MakeDaily(); } catch { /* a backup must never stop the app from starting */ }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -61,7 +77,7 @@ public sealed class SessionStore
     public void Restore(string backupPath)
     {
         AppData restored;
-        try { restored = JsonSerializer.Deserialize<AppData>(File.ReadAllText(backupPath), JsonOptions) ?? throw new InvalidDataException("The backup is empty."); }
+        try { restored = JsonSerializer.Deserialize<AppData>(DataProtector.ReadAll(backupPath), JsonOptions) ?? throw new InvalidDataException("The backup is empty."); }
         catch (JsonException ex) { throw new InvalidDataException("The backup can't be read: " + ex.Message); }
         if (File.Exists(FilePath)) File.Copy(FilePath, FilePath + $".before-restore-{DateTime.Now:yyyyMMdd-HHmmss}", overwrite: true);
         // Only the sessions go back in time; the look of the app stays as it is now.
@@ -76,6 +92,11 @@ public sealed class SessionStore
     /// <summary>Fills in what an old or hand-edited file may lack and links parents.</summary>
     private void Fill()
     {
+        if (Data.Version < 2)
+        {
+            Data.CheckForUpdates = false; // version 2: no automatic contact with GitHub unless the user turns it on
+            Data.Version = 2;
+        }
         Data.Roots ??= new();
         Data.Roots = new(Data.Roots.Where(r => r != null));
         Data.Credentials ??= new();
@@ -127,9 +148,35 @@ public sealed class SessionStore
     {
         Directory.CreateDirectory(DataDir);
         try { SessionBackup.MakeDaily(); } catch { } // the first save of a new day (the app was left open overnight)
-        var tmp = FilePath + ".tmp";
-        File.WriteAllText(tmp, JsonSerializer.Serialize(Data, JsonOptions));
-        File.Move(tmp, FilePath, overwrite: true);
+        DataProtector.WriteAll(FilePath, JsonSerializer.Serialize(Data, JsonOptions));
+    }
+
+    /// <summary>
+    /// Switches to a master password (or back to the Windows account key when null): the sessions file, the backups and the remembered server keys
+    /// are all rewritten. Each file is read with the old protection first, so a failure leaves it as it was.
+    /// </summary>
+    public void ChangeProtection(string? masterPassword)
+    {
+        var files = new List<(string Path, string Text)>();
+        if (Directory.Exists(SessionBackup.Folder))
+            foreach (var f in Directory.GetFiles(SessionBackup.Folder, "sessions-*.json"))
+            {
+                var text = DataProtector.TryReadWithoutPassword(f);
+                if (text != null) files.Add((f, text)); // one that can't be read with the current password is left alone
+            }
+        if (File.Exists(KnownHosts.FilePath) && DataProtector.TryReadWithoutPassword(KnownHosts.FilePath) is { } keys) files.Add((KnownHosts.FilePath, keys));
+
+        DataProtector.SetPassword(masterPassword);
+        Save();
+        foreach (var (path, text) in files) DataProtector.WriteAll(path, text);
+    }
+
+    /// <summary>Protects the backups and the remembered server keys that an older version left as plain text.</summary>
+    private static void ProtectOldFiles()
+    {
+        if (Directory.Exists(SessionBackup.Folder))
+            foreach (var f in Directory.GetFiles(SessionBackup.Folder, "sessions-*.json")) DataProtector.ProtectFile(f);
+        if (File.Exists(KnownHosts.FilePath)) DataProtector.ProtectFile(KnownHosts.FilePath);
     }
 
     public Node? FindById(Guid id) =>

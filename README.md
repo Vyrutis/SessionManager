@@ -78,6 +78,8 @@ Both use [SSH.NET](https://github.com/sshnet/SSH.NET) and .NET 10, and read and 
 
 ### Credentials and backups
 - Passwords are saved only in the system's password store (see the table above).
+- **Encrypted files (Windows).** `sessions.json`, the daily backups and the remembered server keys are encrypted for your Windows account (DPAPI), so a copied or stolen file can't be read on another PC or by another user. Files from older versions are encrypted the first time the new version starts. For more, the menu has *Master password…*: the app then asks for it at startup and the files stay unreadable even to someone using your Windows account. If you forget it the sessions can't be recovered, so keep an exported copy. (The Linux version keeps these files as plain text for now.)
+- **Updates are opt-in.** *Check for updates on startup* is off by default; *Check for updates now* is always there. An installer is only installed from the app when GitHub's published SHA-256 of the file matches the download.
 - **Daily backups.** A copy of the session list (without passwords) is kept each day the app is used, for the last 30 days, in `Backups` next to `sessions.json`. *Import / Export → Restore a backup…* goes back to one (Windows); the list before the restore is kept as a file.
 - **Credential profiles.** One user name and password shared by many sessions; change it once and every session uses the new one.
 

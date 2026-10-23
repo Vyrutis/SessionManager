@@ -139,9 +139,17 @@ public partial class MainWindow
     private void SendCommand(OpenTab tab, SshTerminalView terminal, SavedCommand command)
     {
         var text = CommandInput(command);
-        var targets = _multiExec && tab.IsBroadcasting
-            ? _tabs.Where(t => t.IsBroadcasting && t.View is SshTerminalView { Status: TabStatus.Connected }).Select(t => (SshTerminalView)t.View).ToList()
-            : new List<SshTerminalView> { terminal };
+        var tabs = _multiExec && tab.IsBroadcasting
+            ? _tabs.Where(t => t.IsBroadcasting && t.View is SshTerminalView { Status: TabStatus.Connected }).ToList()
+            : new List<OpenTab> { tab };
+        var targets = tabs.Select(t => (SshTerminalView)t.View).ToList();
+        if (targets.Count > 1 && command.Run)
+        {
+            var list = string.Join("\n", tabs.Take(10).Select(t => "  " + t.Title)) + (tabs.Count > 10 ? $"\n  … and {tabs.Count - 10} more" : "");
+            if (MessageBox.Show(this, $"Run \"{command.Name}\" on {targets.Count} terminals at once?\n\n{list}", "Multi-exec",
+                    MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes)
+                return;
+        }
         foreach (var t in targets) t.SendInput(text);
         terminal.FocusView();
     }

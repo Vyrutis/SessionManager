@@ -3,6 +3,8 @@ using System.Text.Json;
 using Renci.SshNet;
 using SessionManager;
 
+DataProtector.Enabled = false; // the tests read and write plain files in their own data folder; DataProtectorTests turns it on where needed
+
 // Never the real %APPDATA%\SessionManager: the main test run gets its own data folder (child processes get theirs from the parent).
 // Must run before anything touches SessionStore, which reads the variable once.
 string? testData = null;
@@ -23,6 +25,7 @@ void Check(string name, bool ok, string detail = "")
 if (args.Contains("--loc"))
 {
     UpdateCheckerTests.Run(Check);
+    DataProtectorTests.Run(Check);
     LocTests.Run(Check);
     Console.WriteLine($"{pass} passed, {fail} failed");
     return fail == 0 ? 0 : 1;
@@ -59,16 +62,28 @@ T? Throws<T>(Action a) where T : Exception
 // ── Tunnels ──
 var t = SshConnector.ParseTunnel("L 8080:db.internal:5432");
 Check("L tunnel", t is { Kind: 'L', BindHost: "127.0.0.1", BindPort: 8080, Host: "db.internal", Port: 5432 }, t.ToString());
-t = SshConnector.ParseTunnel("l 0.0.0.0:8080:db:5432");
-Check("L with bind + lower case", t is { Kind: 'L', BindHost: "0.0.0.0", BindPort: 8080, Host: "db", Port: 5432 });
+t = SshConnector.ParseTunnel("l localhost:8080:db:5432");
+Check("L with bind + lower case", t is { Kind: 'L', BindHost: "localhost", BindPort: 8080, Host: "db", Port: 5432 });
+Check("L on the network is refused", Throws<FormatException>(() => SshConnector.ParseTunnel("L 0.0.0.0:8080:db:5432")) != null);
+Check("D on the network is refused", Throws<FormatException>(() => SshConnector.ParseTunnel("D 0.0.0.0:1080")) != null);
+Check("R may bind on the server side", SshConnector.ParseTunnel("R 0.0.0.0:9000:localhost:3000").BindHost == "0.0.0.0");
 t = SshConnector.ParseTunnel("R 9000:localhost:3000");
 Check("R tunnel", t is { Kind: 'R', BindPort: 9000, Host: "localhost", Port: 3000 });
 t = SshConnector.ParseTunnel("  D 1080  ");
 Check("D tunnel", t is { Kind: 'D', BindHost: "127.0.0.1", BindPort: 1080 });
-t = SshConnector.ParseTunnel("D 0.0.0.0:1080");
-Check("D with bind", t is { Kind: 'D', BindHost: "0.0.0.0", BindPort: 1080 });
+t = SshConnector.ParseTunnel("D 127.0.0.1:1080");
+Check("D with bind", t is { Kind: 'D', BindHost: "127.0.0.1", BindPort: 1080 });
 foreach (var bad in new[] { "", "L", "X 80:a:80", "L 80:a", "L 0:a:80", "L 70000:a:80", "L 80::80", "D", "D a:b:c", "L8080:a:80", "R abc:h:1" })
     Check($"rejects \"{bad}\"", Throws<FormatException>(() => SshConnector.ParseTunnel(bad)) != null);
+
+// ── SSH algorithms ──
+var sshInfo = new Renci.SshNet.ConnectionInfo("localhost", "u", new Renci.SshNet.PasswordAuthenticationMethod("u", "p"));
+var algBefore = sshInfo.KeyExchangeAlgorithms.Keys.Concat(sshInfo.Encryptions.Keys).Concat(sshInfo.HmacAlgorithms.Keys).Concat(sshInfo.HostKeyAlgorithms.Keys).ToList();
+SshConnector.DropWeakAlgorithms(sshInfo);
+var algAfter = sshInfo.KeyExchangeAlgorithms.Keys.Concat(sshInfo.Encryptions.Keys).Concat(sshInfo.HmacAlgorithms.Keys).Concat(sshInfo.HostKeyAlgorithms.Keys).ToList();
+Check("weak SSH algorithms are removed", !algAfter.Any(a => a is "diffie-hellman-group1-sha1" or "arcfour" or "arcfour128" or "arcfour256" or "blowfish-cbc" or "cast128-cbc" or "ssh-dss" or "hmac-md5" or "hmac-md5-96" or "hmac-sha1-96"), string.Join(",", algAfter));
+Check("modern SSH algorithms stay", sshInfo.KeyExchangeAlgorithms.Count > 0 && sshInfo.Encryptions.Count > 0 && sshInfo.HmacAlgorithms.Count > 0 && sshInfo.HostKeyAlgorithms.Count > 0, "");
+Console.WriteLine("  (SSH algorithms removed: " + string.Join(", ", algBefore.Except(algAfter)) + ")");
 
 // ── Settings clone ──
 var s = new SessionSettings { Host = "h", Tunnels = { "D 1080" } };
@@ -211,6 +226,7 @@ Check("single-session file is not taken as a list", Throws<InvalidDataException>
 ImportTests.Run(Check, dir);
 WebAndOrderTests.Run(Check, dir);
 UpdateCheckerTests.Run(Check);
+DataProtectorTests.Run(Check);
 LocTests.Run(Check);
 await QolTests.Run(Check);
 VncViewTests.RunIsolated(Check);
